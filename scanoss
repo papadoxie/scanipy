@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+
+import requests
+import json
+import time
+from collections import defaultdict
+import os
+import sys
+import argparse
+
+def setup_argparser():
+    parser = argparse.ArgumentParser(
+    description='Search for open source repositories containing specific code patterns and sort by stars.',
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog='''
+Examples:
+
+    # Search for a pattern
+    scanoss --query "eval("
+    
+    # Search for a specific language
+    scanoss --query "pickle.loads" --language python
+  
+    # Search with a higher page limit 
+    scanoss --query "pickle.loads" --pages 10
+  
+    # Search in specific file types
+    scanoss --query "os.system" --language python --extension ".py"
+  
+    # Search with additional filters
+    scanoss --query "subprocess.call" --additional-params "stars:>100"
+    '''
+    )
+
+    # Search query parameters
+    parser.add_argument(
+        '--query', '-q',
+        required=True,
+        help='Code pattern to search for (e.g., "pickle.loads")'
+    )
+    parser.add_argument(
+        '--language', '-l',
+        default='',
+        help='Programming language to search in (e.g., python)'
+    )
+    parser.add_argument(
+        '--extension', '-e',
+        default='',
+        help='File extension to search in (e.g., ".py", ".ipynb")'
+    )
+    parser.add_argument(
+        '--additional-params',
+        default='',
+        help='Additional search parameters (e.g., "stars:>100 -org:microsoft")'
+    )
+    # Pagination and limits
+    parser.add_argument(
+        '--pages', '-p',
+        type=int,
+        default=5,
+        help='Maximum number of pages to retrieve (default: 5, max 10 pages = 1000 results)'
+    )
+    # GitHub API authentication
+    parser.add_argument(
+        '--github-token',
+        help='GitHub personal access token (also can be set via GITHUB_TOKEN env variable)'
+    )
+    # Output options
+    parser.add_argument(
+        '--output', '-o',
+        default='repos.json',
+        help='Output JSON file path (default: repos.json)'
+    )
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose output'
+    )
+    args = parser.parse_args()
+    
+    # Build the complete search query
+    query_parts = []
+    if args.query:
+        query_parts.append(args.query)
+    if args.language:
+        query_parts.append(f"language:{args.language}")
+    if args.extension:
+        query_parts.append(f"extension:{args.extension}")
+    if args.additional_params:
+        query_parts.append(args.additional_params)
+    args.full_query = " ".join(query_parts)
+    
+    return args
+
+if __name__ == "__main__":
+    args = setup_argparser()
+    
+    # Check if GITHUB_TOKEN is set in environment variables
+    if not args.github_token:
+        args.github_token = os.getenv("GITHUB_TOKEN")
+    
+    if not args.github_token:
+        print("Error: GITHUB_TOKEN environment variable or --github-token argument must be set.")
+        sys.exit(1)
+    
+    # Initialize GitHub API client
+    from github import RestAPI as GHRest
+    from github import GraphQLAPI as GHGraphQL
+    ghrest = GHRest(token=args.github_token)
+    ghrest.search(args.query, language=args.language, per_page=100, max_pages=args.pages)
+    repos = ghrest.repositories
+    
+    
+    ghgraphql = GHGraphQL(token=args.github_token, repositories=repos)
+    ghgraphql.batch_query()
+    
+    repos = ghgraphql.repositories
+    
+    repo_list = list(repos.values())
+    repo_list.sort(key=lambda x: x.get("stars", 0), reverse=True)
+    
+    
+    # Print top repositories
+    print(f"\nTOP REPOSITORIES BY STARS:")
+    for i, repo in enumerate(repo_list[:20], 1):
+        print(f"{i}. {repo['name']} - ⭐ {repo.get('stars', 'N/A')}")
+        if repo.get('description'):
+            print(f"   {repo['description']}")
+        print(f"   Files containing {args.query}: {len(repo['files'])}")
+        for file in repo['files'][:3]:  # Show first 3 files only
+            print(f"   - {file['path']}")
+        if len(repo['files']) > 3:
+            print(f"   - ... and {len(repo['files']) - 3} more")
+        print(f"   {repo['url']}")
+        print()  
+    
+    
