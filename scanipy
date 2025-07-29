@@ -2,6 +2,88 @@
 import os
 import sys
 import argparse
+from colorama import init, Fore, Back, Style
+
+# Initialize colorama for cross-platform color support
+init(autoreset=True)
+
+# Color and styling utilities
+class Colors:
+    HEADER = Fore.CYAN + Style.BRIGHT
+    SUCCESS = Fore.GREEN + Style.BRIGHT
+    WARNING = Fore.YELLOW + Style.BRIGHT
+    ERROR = Fore.RED + Style.BRIGHT
+    INFO = Fore.BLUE + Style.BRIGHT
+    REPO_NAME = Fore.MAGENTA + Style.BRIGHT
+    STARS = Fore.YELLOW + Style.BRIGHT
+    FILES = Fore.GREEN
+    URL = Fore.BLUE + Style.DIM
+    DESCRIPTION = Fore.WHITE + Style.DIM
+    RESET = Style.RESET_ALL
+
+def print_banner():
+    """Print a colorful banner for the tool"""
+    banner = f"""
+{Colors.HEADER}╔══════════════════════════════════════════════════════════════╗
+║                          📡 SCANIPY                          ║
+║              Code Pattern Scanner for GitHub                 ║
+╚══════════════════════════════════════════════════════════════╝{Colors.RESET}
+"""
+    print(banner)
+
+def print_search_info(query, language, extension, pages):
+    """Print search parameters in a formatted way"""
+    print(f"{Colors.INFO}🔍 Search Parameters:{Colors.RESET}")
+    print(f"   {Colors.INFO}•{Colors.RESET} Query: {Colors.WARNING}'{query}'{Colors.RESET}")
+    if language:
+        print(f"   {Colors.INFO}•{Colors.RESET} Language: {Colors.SUCCESS}{language}{Colors.RESET}")
+    if extension:
+        print(f"   {Colors.INFO}•{Colors.RESET} Extension: {Colors.SUCCESS}{extension}{Colors.RESET}")
+    print(f"   {Colors.INFO}•{Colors.RESET} Max Pages: {Colors.WARNING}{pages}{Colors.RESET}")
+    print()
+
+def format_star_count(stars):
+    """Format star count with appropriate color and formatting"""
+    if stars == 'N/A':
+        return f"{Colors.WARNING}N/A{Colors.RESET}"
+    elif stars >= 10000:
+        return f"{Colors.SUCCESS}⭐ {stars:,}{Colors.RESET}"
+    elif stars >= 1000:
+        return f"{Colors.STARS}⭐ {stars:,}{Colors.RESET}"
+    else:
+        return f"{Colors.WARNING}⭐ {stars}{Colors.RESET}"
+
+def print_repository(index, repo, query):
+    """Print a single repository with colorful formatting"""
+    # Repository header
+    print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
+    print(f"{Colors.INFO}{index:2d}.{Colors.RESET} {Colors.REPO_NAME}{repo['name']}{Colors.RESET} {format_star_count(repo.get('stars', 'N/A'))}")
+    
+    # Description
+    if repo.get('description'):
+        desc = repo['description']
+        if len(desc) > 100:
+            desc = desc[:97] + "..."
+        print(f"    {Colors.DESCRIPTION}📝 {desc}{Colors.RESET}")
+    
+    # File count
+    file_count = len(repo['files'])
+    if file_count > 0:
+        print(f"    {Colors.FILES}📁 {file_count} file{'s' if file_count != 1 else ''} containing '{query}'{Colors.RESET}")
+        
+        # Show files
+        for i, file in enumerate(repo['files'][:3]):
+            print(f"    {Colors.FILES}├─{Colors.RESET} {file['path']}")
+        
+        if len(repo['files']) > 3:
+            remaining = len(repo['files']) - 3
+            print(f"    {Colors.FILES}└─{Colors.RESET} {Colors.WARNING}... and {remaining} more file{'s' if remaining != 1 else ''}{Colors.RESET}")
+    
+    # URL
+    if repo.get('url'):
+        print(f"    {Colors.URL}🔗 {repo['url']}{Colors.RESET}")
+    
+    print()
 
 def setup_argparser():
     parser = argparse.ArgumentParser(
@@ -114,19 +196,13 @@ if __name__ == "__main__":
     repo_list = list(repos.values())
     repo_list.sort(key=lambda x: x.get("stars", 0), reverse=True)
     
+    print_banner()
+    
+    # Print search information
+    print_search_info(args.query, args.language, args.extension, args.pages)
     
     # Print top repositories
-    print(f"\nTOP REPOSITORIES BY STARS:")
+    print(f"{Colors.INFO}TOP REPOSITORIES BY STARS:{Colors.RESET}")
     for i, repo in enumerate(repo_list[:20], 1):
-        print(f"{i}. {repo['name']} - ⭐ {repo.get('stars', 'N/A')}")
-        if repo.get('description'):
-            print(f"   {repo['description']}")
-        print(f"   Files containing {args.query}: {len(repo['files'])}")
-        for file in repo['files'][:3]:  # Show first 3 files only
-            print(f"   - {file['path']}")
-        if len(repo['files']) > 3:
-            print(f"   - ... and {len(repo['files']) - 3} more")
-        print(f"   {repo['url']}")
-        print()  
-    
-    
+        print_repository(i, repo, args.query)
+

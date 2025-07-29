@@ -7,6 +7,19 @@ import time
 import os
 import sys
 from collections import defaultdict
+from colorama import init, Fore, Back, Style
+
+# Initialize colorama for cross-platform color support
+init(autoreset=True)
+
+# Color utilities for consistent styling
+class Colors:
+    SUCCESS = Fore.GREEN + Style.BRIGHT
+    WARNING = Fore.YELLOW + Style.BRIGHT
+    ERROR = Fore.RED + Style.BRIGHT
+    INFO = Fore.BLUE + Style.BRIGHT
+    PROGRESS = Fore.CYAN
+    RESET = Style.RESET_ALL
 
 class GitHubAPIError(Exception):
     """Custom exception for GitHub API errors."""
@@ -28,7 +41,7 @@ class RestAPI:
     def __query_api(self, params):
         response = requests.get(self.search_url, headers=self.headers, params=params)
         if response.status_code != 200:
-            print(f"Error: {response.status_code}")
+            print(f"{Colors.ERROR}❌ Error: {response.status_code}{Colors.RESET}")
             print(response.json())
             raise GitHubAPIError(f"GitHub REST API request failed with status {response.status_code}: {response.text}")
         return (response, response.json().get("items", []))
@@ -54,7 +67,7 @@ class RestAPI:
             if remaining < 1:
                 reset_time = int(response.headers["X-RateLimit-Reset"])
                 wait_time = max(reset_time - time.time(), 0) + 1
-                print(f"Rate limit almost reached. Waiting {wait_time:.1f} seconds...")
+                print(f"{Colors.WARNING}⏳ Rate limit reached. Waiting {wait_time:.1f} seconds...{Colors.RESET}")
                 time.sleep(wait_time)
             else:
                 # Small delay to be respectful to the API
@@ -77,18 +90,20 @@ class RestAPI:
         
         page = 1
         total_pages = max_pages
-        print(f"Applying query: {q}...")
+        print(f"{Colors.INFO}🔍 Searching GitHub for: {Colors.WARNING}'{q}'{Colors.RESET}")
 
         while page <= total_pages:
-            print(f"Fetching page {page} of search results...")
+            print(f"{Colors.PROGRESS}📄 Fetching page {page}/{total_pages}...{Colors.RESET}", end=" ")
             params["page"] = page
             try:
                 response, items = self.__query_api(params)
+                print(f"{Colors.SUCCESS}✓ Found {len(items)} items{Colors.RESET}")
             except GitHubAPIError as e:
+                print(f"{Colors.ERROR}✗ Failed{Colors.RESET}")
                 break
             
             if not items:
-                print("No more results found.")
+                print(f"{Colors.WARNING}ℹ️  No more results found.{Colors.RESET}")
                 break
             
             for item in items:
@@ -99,7 +114,8 @@ class RestAPI:
             page += 1
             self.__rate_limit(response)
 
-        print(f"Found {len(self.repositories)} unique repositories against query: '{query}'")
+        print(f"{Colors.SUCCESS}✅ Search complete! Found {len(self.repositories)} unique repositories{Colors.RESET}")
+        print()
 
 
 class GraphQLAPI:
@@ -162,22 +178,23 @@ class GraphQLAPI:
         repo_names = list(self.repositories.keys())
         total_batches = (len(repo_names) + batch_size - 1) // batch_size
         
-        print(f"Fetching repository details in {total_batches} batches...")
+        print(f"{Colors.INFO}📊 Fetching repository details in {total_batches} batch{'es' if total_batches != 1 else ''}...{Colors.RESET}")
         
         for batch_idx in range(total_batches):
             start_idx = batch_idx * batch_size
             end_idx = min(start_idx + batch_size, len(repo_names))
             batch_repos = repo_names[start_idx:end_idx]
             
-            print(f"Processing batch {batch_idx + 1}/{total_batches} ({len(batch_repos)} repositories)")
+            print(f"{Colors.PROGRESS}⚡ Processing batch {batch_idx + 1}/{total_batches} ({len(batch_repos)} repositories){Colors.RESET}", end=" ")
             try:
                 graphql_data = self.__fetch_repo_data(batch_repos)
+                print(f"{Colors.SUCCESS}✓{Colors.RESET}")
             except GitHubAPIError as e:
-                print(f"Error fetching batch {batch_idx + 1}: {e}")
+                print(f"{Colors.ERROR}✗ Error: {e}{Colors.RESET}")
                 continue
             
             if "errors" in graphql_data:
-                print("GraphQL Errors:")
+                print(f"{Colors.ERROR}⚠️  GraphQL Errors:{Colors.RESET}")
                 print(json.dumps(graphql_data["errors"], indent=2))
                 
             if "data" in graphql_data:
@@ -190,3 +207,6 @@ class GraphQLAPI:
                                       url=repo_data.get("url")
                                       )
             time.sleep(2)
+        
+        print(f"{Colors.SUCCESS}✅ Repository details fetched successfully!{Colors.RESET}")
+        print()
