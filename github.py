@@ -50,13 +50,18 @@ class RestAPI:
     def __rate_limit(self, response):
         if "X-RateLimit-Remaining" in response.headers:
             remaining = int(response.headers["X-RateLimit-Remaining"])
-            if remaining < 10:
+            # Only wait if we have very few requests left (0)
+            if remaining < 1:
                 reset_time = int(response.headers["X-RateLimit-Reset"])
                 wait_time = max(reset_time - time.time(), 0) + 1
                 print(f"Rate limit almost reached. Waiting {wait_time:.1f} seconds...")
                 time.sleep(wait_time)
             else:
-                time.sleep(1)
+                # Small delay to be respectful to the API
+                time.sleep(0.5)
+        else:
+            # Fallback delay if headers are missing
+            time.sleep(1)
                 
     def search(self, query, language=None, extension=None, per_page=100, max_pages=10):
         q = query
