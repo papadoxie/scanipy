@@ -102,7 +102,7 @@ if __name__ == "__main__":
     from github import RestAPI as GHRest
     from github import GraphQLAPI as GHGraphQL
     ghrest = GHRest(token=args.github_token)
-    ghrest.search(args.query, language=args.language, per_page=100, max_pages=args.pages)
+    ghrest.search(args.query, language=args.language, extension=args.extension, per_page=100, max_pages=args.pages)
     repos = ghrest.repositories
     
     

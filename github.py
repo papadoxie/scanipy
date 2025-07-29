@@ -58,10 +58,12 @@ class RestAPI:
             else:
                 time.sleep(1)
                 
-    def search(self, query, language=None, per_page=100, max_pages=10):
+    def search(self, query, language=None, extension=None, per_page=100, max_pages=10):
         q = query
         if language:
             q += f" language:{language}"
+        if extension:
+            q += f" extension:{extension}"
             
         params = {
             "q": q,
