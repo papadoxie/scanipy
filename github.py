@@ -6,8 +6,10 @@ import json
 import time
 import os
 import sys
+import re
 from collections import defaultdict
 from colorama import init, Fore, Back, Style
+import base64
 
 # Initialize colorama for cross-platform color support
 init(autoreset=True)
@@ -46,7 +48,7 @@ class RestAPI:
             raise GitHubAPIError(f"GitHub REST API request failed with status {response.status_code}: {response.text}")
         return (response, response.json().get("items", []))
     
-    def __update_repo(self, repo_name, file_path, file_url):
+    def __update_repo(self, repo_name, file_path, file_url, raw_url=None):
         if repo_name not in self.repositories:
             self.repositories[repo_name] = {
                 "name": repo_name,
@@ -57,9 +59,95 @@ class RestAPI:
             } 
         self.repositories[repo_name]["files"].append({
             "path": file_path,
-            "url": file_url
+            "url": file_url,
+            "raw_url": raw_url,
+            "keywords_found": [],
+            "keyword_match": False
         })
-    
+
+    def __fetch_file_content(self, raw_url):
+        """Fetch the raw content of a file from GitHub"""
+        try:
+            response = requests.get(raw_url, headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                # Try to decode as text, fallback to raw if it fails
+                try:
+                    return response.text
+                except UnicodeDecodeError:
+                    return response.content.decode('utf-8', errors='ignore')
+            else:
+                return None
+        except Exception as e:
+            print(f"{Colors.WARNING}⚠️  Could not fetch content from {raw_url}: {e}{Colors.RESET}")
+            return None
+
+    def __check_keywords_in_content(self, content, keywords):
+        """Check if any of the keywords are present in the file content"""
+        if not content or not keywords:
+            return [], False
+        
+        content_lower = content.lower()
+        found_keywords = []
+        
+        for keyword in keywords:
+            # Use regex for more flexible matching
+            if re.search(re.escape(keyword.lower()), content_lower):
+                found_keywords.append(keyword)
+        
+        return found_keywords, len(found_keywords) > 0
+
+    def filter_by_keywords(self, keywords):
+        """Filter repositories and files based on keyword presence in file content"""
+        if not keywords:
+            return
+        
+        print(f"{Colors.INFO}🔍 Filtering files by keywords: {Colors.WARNING}{', '.join(keywords)}{Colors.RESET}")
+        
+        total_files = sum(len(repo['files']) for repo in self.repositories.values())
+        processed_files = 0
+        
+        for repo_name, repo_data in self.repositories.items():
+            files_to_keep = []
+            
+            for file_info in repo_data['files']:
+                processed_files += 1
+                if processed_files % 10 == 0 or processed_files == total_files:
+                    print(f"{Colors.PROGRESS}📄 Processing file {processed_files}/{total_files}...{Colors.RESET}", end="\r")
+                
+                # Build raw URL from the GitHub URL
+                if file_info.get('url'):
+                    # Convert GitHub URL to raw URL
+                    raw_url = file_info['url'].replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+                    
+                    content = self.__fetch_file_content(raw_url)
+                    if content:
+                        found_keywords, has_keywords = self.__check_keywords_in_content(content, keywords)
+                        file_info['keywords_found'] = found_keywords
+                        file_info['keyword_match'] = has_keywords
+                        
+                        if has_keywords:
+                            files_to_keep.append(file_info)
+                    else:
+                        # If we can't fetch content, keep the file but mark as unknown
+                        file_info['keywords_found'] = []
+                        file_info['keyword_match'] = None
+                        files_to_keep.append(file_info)
+                    
+                    # Rate limiting
+                    time.sleep(0.2)
+                else:
+                    files_to_keep.append(file_info)
+            
+            repo_data['files'] = files_to_keep
+        
+        # Remove repositories with no matching files
+        empty_repos = [repo_name for repo_name, repo_data in self.repositories.items() if not repo_data['files']]
+        for repo_name in empty_repos:
+            del self.repositories[repo_name]
+        
+        print(f"\n{Colors.SUCCESS}✅ Keyword filtering complete! {len(self.repositories)} repositories have files with matching keywords{Colors.RESET}")
+        print()
+
     def __rate_limit(self, response):
         if "X-RateLimit-Remaining" in response.headers:
             remaining = int(response.headers["X-RateLimit-Remaining"])
@@ -76,13 +164,14 @@ class RestAPI:
             # Fallback delay if headers are missing
             time.sleep(1)
                 
-    def search(self, query, language=None, extension=None, per_page=100, max_pages=10):
+    def search(self, query, language=None, extension=None, per_page=100, max_pages=10, additional_params=None):
         q = query
         if language:
             q += f" language:{language}"
         if extension:
             q += f" extension:{extension}"
-            
+        if additional_params:
+            q += f" {additional_params}"
         params = {
             "q": q,
             "per_page": per_page
