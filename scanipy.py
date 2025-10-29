@@ -2,11 +2,9 @@
 import os
 import sys
 import argparse
-import subprocess
-import tempfile
-import shutil
-from pathlib import Path
 from colorama import init, Fore, Back, Style
+
+from tools.semgrep.semgrep_runner import analyze_repositories_with_semgrep
 
 # Initialize colorama for cross-platform color support
 init(autoreset=True)
@@ -236,152 +234,6 @@ Examples:
     
     return args
 
-def check_command_exists(cmd):
-    """Check if a command exists in the system PATH"""
-    try:
-        subprocess.run(['which', cmd], check=True, capture_output=True)
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-def clone_repository(repo_url, clone_path):
-    """Clone a GitHub repository to the specified path"""
-    try:
-        subprocess.run(['git', 'clone', '--depth=1', repo_url, clone_path], check=True, capture_output=True)
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"{Colors.ERROR}❌ Failed to clone {repo_url}: {e}{Colors.RESET}")
-        return False
-
-def run_semrep_analysis(repo_path, semrep_args='', rules_path=None, use_pro=False):
-    """Run semrep analysis on a repository"""
-    try:
-        # Use semgrep scan instead of just semgrep
-        cmd = ['semgrep', 'scan']
-        
-        # Add pro flag if enabled
-        if use_pro:
-            cmd.append('--pro')
-        
-        # Add custom rules file if provided
-        if rules_path:
-            # Check if rules file exists
-            if not os.path.exists(rules_path):
-                return False, f"Error: Rules file or directory not found: {rules_path}"
-            cmd.extend(['--config', rules_path])
-        
-        # Add any additional arguments
-        if semrep_args and semrep_args.strip():
-            cmd.extend(semrep_args.split())
-            
-        # Add target directory to scan
-        cmd.append(repo_path)
-        
-        print(f"{Colors.INFO}🔍 Running semgrep: {' '.join(cmd)}{Colors.RESET}")
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return True, result.stdout
-    except subprocess.CalledProcessError as e:
-        return False, f"Error running semgrep: {e}\nOutput: {e.stdout}\nError: {e.stderr}"
-
-def analyze_repositories_with_semrep(repo_list, semrep_args='', clone_dir=None, keep_cloned=False, rules_path=None, use_pro=False):
-    """Clone and analyze repositories with semrep"""
-    if not check_command_exists('semgrep'):
-        print(f"{Colors.ERROR}❌ Error: semgrep is not installed on your system.{Colors.RESET}")
-        print(f"{Colors.INFO}💡 To install semgrep, follow instructions at https://github.com/semgrep/semgrep{Colors.RESET}")
-        return
-    
-    if not check_command_exists('git'):
-        print(f"{Colors.ERROR}❌ Error: git is not installed on your system.{Colors.RESET}")
-        return
-    
-    # Create temp directory if clone_dir is not specified
-    using_temp_dir = clone_dir is None
-    if using_temp_dir:
-        clone_dir = tempfile.mkdtemp(prefix="scanipy_repos_")
-        print(f"{Colors.INFO}📁 Created temporary directory for cloning: {clone_dir}{Colors.RESET}")
-    else:
-        # Make sure the directory exists
-        os.makedirs(clone_dir, exist_ok=True)
-        print(f"{Colors.INFO}📁 Using directory for cloning: {clone_dir}{Colors.RESET}")
-    
-    # Take only the first 10 repositories to analyze
-    repos_to_analyze = repo_list[:10] if len(repo_list) > 10 else repo_list
-    
-    print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
-    print(f"{Colors.INFO}🚀 Running semgrep analysis on the top {len(repos_to_analyze)} repositories...{Colors.RESET}")
-    if rules_path:
-        print(f"{Colors.INFO}📝 Using custom rules from: {rules_path}{Colors.RESET}")
-    if use_pro:
-        print(f"{Colors.INFO}🔒 Using semgrep with --pro flag{Colors.RESET}")
-    print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
-    
-    results = []
-    
-    for i, repo in enumerate(repos_to_analyze):
-        repo_url = repo.get('url')
-        if not repo_url:
-            continue
-            
-        repo_name = repo.get('name', f"repo_{i}")
-        clone_path = os.path.join(clone_dir, repo_name.replace("/", "_"))
-        
-        print(f"\n{Colors.INFO}[{i+1}/{len(repos_to_analyze)}] Analyzing {Colors.REPO_NAME}{repo_name}{Colors.RESET}")
-        
-        # Clone the repository
-        print(f"{Colors.PROGRESS}📥 Cloning repository: {repo_url} to {clone_path}...{Colors.RESET}")
-        if clone_repository(repo_url, clone_path):
-            print(f"{Colors.SUCCESS}✅ Cloning successful{Colors.RESET}")
-            
-            # Run semgrep
-            print(f"{Colors.PROGRESS}🔍 Running semgrep analysis...{Colors.RESET}")
-            success, output = run_semrep_analysis(clone_path, semrep_args, rules_path=rules_path, use_pro=use_pro)
-            
-            if success:
-                print(f"{Colors.SUCCESS}✅ semgrep analysis complete{Colors.RESET}")
-                print(f"\n{Colors.HEADER}--- semgrep results for {repo_name} ---{Colors.RESET}")
-                print(output)
-                print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
-                
-                results.append({
-                    "repo": repo_name,
-                    "success": True,
-                    "output": output
-                })
-            else:
-                print(f"{Colors.ERROR}❌ semgrep analysis failed{Colors.RESET}")
-                print(f"{Colors.ERROR}{output}{Colors.RESET}")
-                
-                results.append({
-                    "repo": repo_name,
-                    "success": False,
-                    "output": output
-                })
-        else:
-            results.append({
-                "repo": repo_name,
-                "success": False,
-                "output": "Failed to clone repository"
-            })
-    
-    # Clean up if using a temporary directory and not keeping clones
-    if using_temp_dir and not keep_cloned:
-        print(f"{Colors.INFO}🧹 Cleaning up temporary directory...{Colors.RESET}")
-        try:
-            shutil.rmtree(clone_dir)
-            print(f"{Colors.SUCCESS}✅ Cleanup successful{Colors.RESET}")
-        except Exception as e:
-            print(f"{Colors.ERROR}❌ Failed to clean up: {e}{Colors.RESET}")
-    elif keep_cloned:
-        print(f"{Colors.INFO}💾 Repositories have been kept at: {clone_dir}{Colors.RESET}")
-    
-    # Summary
-    print(f"\n{Colors.HEADER}{'─' * 80}{Colors.RESET}")
-    print(f"{Colors.INFO}📊 semrep Analysis Summary:{Colors.RESET}")
-    print(f"{Colors.INFO}✓ Successfully analyzed: {sum(1 for r in results if r['success'])}/{len(results)} repositories{Colors.RESET}")
-    print(f"{Colors.INFO}✗ Failed to analyze: {sum(1 for r in results if not r['success'])}/{len(results)} repositories{Colors.RESET}")
-    print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
-    
-    return results
 
 if __name__ == "__main__":
     args = setup_argparser()
@@ -400,8 +252,8 @@ if __name__ == "__main__":
     print_search_info(args.query, args.language, args.extension, args.pages, args.keywords_list)
     
     # Initialize GitHub API client
-    from github import RestAPI as GHRest
-    from github import GraphQLAPI as GHGraphQL
+    from integrations.github.github import RestAPI as GHRest
+    from integrations.github.github import GraphQLAPI as GHGraphQL
     ghrest = GHRest(token=args.github_token)
     ghrest.search(args.query, language=args.language, extension=args.extension, per_page=100, max_pages=args.pages, additional_params=args.additional_params)
     repos = ghrest.repositories
@@ -428,12 +280,13 @@ if __name__ == "__main__":
         # Run semrep on top repositories if requested
         if args.run_semrep:
             analyze_repositories_with_semrep(
-                repo_list, 
-                semrep_args=args.semrep_args,
+                repo_list,
+                Colors,
+                semgrep_args=args.semrep_args,
                 clone_dir=args.clone_dir,
                 keep_cloned=args.keep_cloned,
                 rules_path=args.rules,
-                use_pro=args.pro
+                use_pro=args.pro,
             )
     else:
         print(f"{Colors.WARNING}📭 No repositories found matching your criteria.{Colors.RESET}")
