@@ -1,0 +1,53 @@
+rules:
+  - id: python.lang.security.path-traversal.tarslip.tarfile-extract
+    # The 'mode' has been removed. Semgrep will use the default 'search' mode,
+    # which is correct for this type of pattern matching.
+    languages:
+      - python
+    message: >-
+      Detected a call to `tarfile.extract()` or `tarfile.extractall()` without a `filter`.
+      Extracting archives without sanitizing member paths can lead to path traversal
+      vulnerabilities (Tarslip / Zip Slip), allowing an attacker to write files
+      to arbitrary locations on the filesystem.
+
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      owasp:
+        - "A01:2021 - Broken Access Control"
+      references:
+        - https://docs.python.org/3/library/tarfile.html#tarfile-extraction-filters
+        - https://peps.python.org/pep-0706/
+      technology:
+        - python
+      license: LGPL-2.1
+      vulnerability_class:
+        - Path Traversal
+    patterns:
+      - pattern-either:
+          # --- Detect unsafe 'extractall' calls in various forms ---
+          - pattern: |
+              with tarfile.open(...) as $TAR:
+                  ...
+                  $TAR.extractall(...)
+          - pattern: tarfile.open(...).extractall(...)
+          - pattern: |
+              $TAR = tarfile.open(...)
+              ...
+              $TAR.extractall(...)
+
+          # --- Detect unsafe 'extract' calls in various forms ---
+          - pattern: |
+              with tarfile.open(...) as $TAR:
+                  ...
+                  $TAR.extract(...)
+          - pattern: tarfile.open(...).extract(...)
+          - pattern: |
+              $TAR = tarfile.open(...)
+              ...
+              $TAR.extract(...)
+
+      # --- This clause excludes any matched call that uses the secure `filter` argument ---
+      - pattern-not-inside: |
+          $CALL(..., filter = ... , ...)

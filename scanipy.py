@@ -4,6 +4,8 @@ import sys
 import argparse
 from colorama import init, Fore, Back, Style
 
+from tools.semgrep.semgrep_runner import analyze_repositories_with_semgrep
+
 # Initialize colorama for cross-platform color support
 init(autoreset=True)
 
@@ -14,6 +16,7 @@ class Colors:
     WARNING = Fore.YELLOW + Style.BRIGHT
     ERROR = Fore.RED + Style.BRIGHT
     INFO = Fore.BLUE + Style.BRIGHT
+    PROGRESS = Fore.CYAN
     REPO_NAME = Fore.MAGENTA + Style.BRIGHT
     STARS = Fore.YELLOW + Style.BRIGHT
     FILES = Fore.GREEN
@@ -31,7 +34,7 @@ def print_banner():
 """
     print(banner)
 
-def print_search_info(query, language, extension, pages):
+def print_search_info(query, language, extension, pages, keywords=None):
     """Print search parameters in a formatted way"""
     print(f"{Colors.INFO}🔍 Search Parameters:{Colors.RESET}")
     print(f"   {Colors.INFO}•{Colors.RESET} Query: {Colors.WARNING}'{query}'{Colors.RESET}")
@@ -39,6 +42,8 @@ def print_search_info(query, language, extension, pages):
         print(f"   {Colors.INFO}•{Colors.RESET} Language: {Colors.SUCCESS}{language}{Colors.RESET}")
     if extension:
         print(f"   {Colors.INFO}•{Colors.RESET} Extension: {Colors.SUCCESS}{extension}{Colors.RESET}")
+    if keywords:
+        print(f"   {Colors.INFO}•{Colors.RESET} Keywords: {Colors.WARNING}{', '.join(keywords)}{Colors.RESET}")
     print(f"   {Colors.INFO}•{Colors.RESET} Max Pages: {Colors.WARNING}{pages}{Colors.RESET}")
     print()
 
@@ -71,9 +76,20 @@ def print_repository(index, repo, query):
     if file_count > 0:
         print(f"    {Colors.FILES}📁 {file_count} file{'s' if file_count != 1 else ''} containing '{query}'{Colors.RESET}")
         
-        # Show files
+        # Show files with keyword information
         for i, file in enumerate(repo['files'][:3]):
-            print(f"    {Colors.FILES}├─{Colors.RESET} {file['path']}")
+            file_line = f"    {Colors.FILES}├─{Colors.RESET} {file['path']}"
+            
+            # Add keyword match information
+            if file.get('keyword_match') is True:
+                keywords_str = ', '.join(file.get('keywords_found', []))
+                file_line += f" {Colors.SUCCESS}[Keywords: {keywords_str}]{Colors.RESET}"
+            elif file.get('keyword_match') is False:
+                file_line += f" {Colors.WARNING}[No keywords found]{Colors.RESET}"
+            elif file.get('keyword_match') is None:
+                file_line += f" {Colors.WARNING}[Content unavailable]{Colors.RESET}"
+            
+            print(file_line)
         
         if len(repo['files']) > 3:
             remaining = len(repo['files']) - 3
@@ -93,19 +109,25 @@ def setup_argparser():
 Examples:
 
     # Search for a pattern
-    scanoss --query "eval("
+    scanipy --query "extractall"
     
     # Search for a specific language
-    scanoss --query "pickle.loads" --language python
+    scanipy --query "pickle.loads" --language python
+  
+    # Search with keyword filtering
+    scanipy --query "extractall" --keywords "path,directory,zip" --language python
   
     # Search with a higher page limit 
-    scanoss --query "pickle.loads" --pages 10
+    scanipy --query "pickle.loads" --pages 10
   
     # Search in specific file types
-    scanoss --query "os.system" --language python --extension ".py"
+    scanipy --query "os.system" --language python --extension ".py"
   
     # Search with additional filters
-    scanoss --query "subprocess.call" --additional-params "stars:>100"
+    scanipy --query "subprocess.call" --additional-params "stars:>100"
+    
+    # Run semrep on top repositories
+    scanipy --query "extractall" --run-semrep
     '''
     )
 
@@ -113,7 +135,7 @@ Examples:
     parser.add_argument(
         '--query', '-q',
         required=True,
-        help='Code pattern to search for (e.g., "pickle.loads")'
+        help='Code pattern to search for (e.g., "extractall")'
     )
     parser.add_argument(
         '--language', '-l',
@@ -124,6 +146,11 @@ Examples:
         '--extension', '-e',
         default='',
         help='File extension to search in (e.g., ".py", ".ipynb")'
+    )
+    parser.add_argument(
+        '--keywords', '-k',
+        default='',
+        help='Comma-separated keywords to look for in files containing the main pattern (e.g., "path,directory,zip")'
     )
     parser.add_argument(
         '--additional-params',
@@ -153,7 +180,45 @@ Examples:
         action='store_true',
         help='Enable verbose output'
     )
+    # New semrep options
+    parser.add_argument(
+        '--run-semrep',
+        action='store_true',
+        help='Run semrep analysis on the top 10 repositories'
+    )
+    parser.add_argument(
+        '--semrep-args',
+        default='',
+        help='Additional arguments to pass to semrep (e.g., "--json --verbose"). Quote the arguments as a single string.'
+    )
+    parser.add_argument(
+        '--pro',
+        action='store_true',
+        help='Use semgrep with the --pro flag'
+    )
+    parser.add_argument(
+        '--rules',
+        default=None,
+        help='Path to custom semgrep rules file or directory (YAML format)'
+    )
+    parser.add_argument(
+        '--clone-dir',
+        default=None,
+        help='Directory to clone repositories into (default: temporary directory)'
+    )
+    parser.add_argument(
+        '--keep-cloned',
+        action='store_true',
+        help='Keep cloned repositories after analysis (only applicable with --clone-dir)'
+    )
+    
     args = parser.parse_args()
+    
+    # Parse keywords
+    if args.keywords:
+        args.keywords_list = [kw.strip() for kw in args.keywords.split(',') if kw.strip()]
+    else:
+        args.keywords_list = []
     
     # Build the complete search query
     query_parts = []
@@ -169,6 +234,7 @@ Examples:
     
     return args
 
+
 if __name__ == "__main__":
     args = setup_argparser()
     
@@ -177,16 +243,25 @@ if __name__ == "__main__":
         args.github_token = os.getenv("GITHUB_TOKEN")
     
     if not args.github_token:
-        print("Error: GITHUB_TOKEN environment variable or --github-token argument must be set.")
+        print(f"{Colors.ERROR}❌ Error: GITHUB_TOKEN environment variable or --github-token argument must be set.{Colors.RESET}")
         sys.exit(1)
     
+    print_banner()
+    
+    # Print search information
+    print_search_info(args.query, args.language, args.extension, args.pages, args.keywords_list)
+    
     # Initialize GitHub API client
-    from github import RestAPI as GHRest
-    from github import GraphQLAPI as GHGraphQL
+    from integrations.github.github import RestAPI as GHRest
+    from integrations.github.github import GraphQLAPI as GHGraphQL
     ghrest = GHRest(token=args.github_token)
-    ghrest.search(args.query, language=args.language, extension=args.extension, per_page=100, max_pages=args.pages)
+    ghrest.search(args.query, language=args.language, extension=args.extension, per_page=100, max_pages=args.pages, additional_params=args.additional_params)
     repos = ghrest.repositories
     
+    # Apply keyword filtering if keywords are provided
+    if args.keywords_list:
+        ghrest.filter_by_keywords(args.keywords_list)
+        repos = ghrest.repositories
     
     ghgraphql = GHGraphQL(token=args.github_token, repositories=repos)
     ghgraphql.batch_query()
@@ -196,13 +271,25 @@ if __name__ == "__main__":
     repo_list = list(repos.values())
     repo_list.sort(key=lambda x: x.get("stars", 0), reverse=True)
     
-    print_banner()
-    
-    # Print search information
-    print_search_info(args.query, args.language, args.extension, args.pages)
-    
     # Print top repositories
-    print(f"{Colors.INFO}TOP REPOSITORIES BY STARS:{Colors.RESET}")
-    for i, repo in enumerate(repo_list[:20], 1):
-        print_repository(i, repo, args.query)
+    if repo_list:
+        print(f"{Colors.SUCCESS}🎯 TOP REPOSITORIES BY STARS:{Colors.RESET}")
+        for i, repo in enumerate(repo_list[:20], 1):
+            print_repository(i, repo, args.query)
+        
+        # Run semrep on top repositories if requested
+        if args.run_semrep:
+            analyze_repositories_with_semrep(
+                repo_list,
+                Colors,
+                semgrep_args=args.semrep_args,
+                clone_dir=args.clone_dir,
+                keep_cloned=args.keep_cloned,
+                rules_path=args.rules,
+                use_pro=args.pro,
+            )
+    else:
+        print(f"{Colors.WARNING}📭 No repositories found matching your criteria.{Colors.RESET}")
+        if args.keywords_list:
+            print(f"{Colors.INFO}💡 Try with fewer or different keywords, or search without keyword filtering.{Colors.RESET}")
 
