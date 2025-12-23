@@ -11,23 +11,23 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 from colorama import init
 from dotenv import load_dotenv
 
-from integrations.github import search_repositories, SearchStrategy, SortOrder
+from integrations.github import SearchStrategy, SortOrder, search_repositories
 
 # Load environment variables from .env file
 load_dotenv()
 from models import (
-    Colors,
-    SearchConfig,
-    SemgrepConfig,
     DEFAULT_MAX_PAGES,
     DEFAULT_OUTPUT_FILE,
     MAX_DISPLAY_REPOS,
     MAX_FILES_PREVIEW,
+    Colors,
+    SearchConfig,
+    SemgrepConfig,
 )
 from tools.semgrep.semgrep_runner import analyze_repositories_with_semgrep
 
@@ -38,9 +38,10 @@ init(autoreset=True)
 # Display Functions
 # =============================================================================
 
+
 class Display:
     """Handles all terminal output and formatting."""
-    
+
     @staticmethod
     def print_banner() -> None:
         """Print a colorful banner for the tool."""
@@ -60,20 +61,42 @@ class Display:
     ) -> None:
         """Print search parameters in a formatted way."""
         print(f"{Colors.INFO}🔍 Search Parameters:{Colors.RESET}")
-        print(f"   {Colors.INFO}•{Colors.RESET} Query: {Colors.WARNING}'{config.query}'{Colors.RESET}")
+        print(
+            f"   {Colors.INFO}•{Colors.RESET} Query: {Colors.WARNING}'{config.query}'{Colors.RESET}"
+        )
         if config.language:
-            print(f"   {Colors.INFO}•{Colors.RESET} Language: {Colors.SUCCESS}{config.language}{Colors.RESET}")
+            print(
+                f"   {Colors.INFO}•{Colors.RESET} Language: "
+                f"{Colors.SUCCESS}{config.language}{Colors.RESET}"
+            )
         if config.extension:
-            print(f"   {Colors.INFO}•{Colors.RESET} Extension: {Colors.SUCCESS}{config.extension}{Colors.RESET}")
+            print(
+                f"   {Colors.INFO}•{Colors.RESET} Extension: "
+                f"{Colors.SUCCESS}{config.extension}{Colors.RESET}"
+            )
         if config.keywords:
-            print(f"   {Colors.INFO}•{Colors.RESET} Keywords: {Colors.WARNING}{', '.join(config.keywords)}{Colors.RESET}")
-        print(f"   {Colors.INFO}•{Colors.RESET} Max Pages: {Colors.WARNING}{config.max_pages}{Colors.RESET}")
+            kw_str = ", ".join(config.keywords)
+            print(
+                f"   {Colors.INFO}•{Colors.RESET} Keywords: {Colors.WARNING}{kw_str}{Colors.RESET}"
+            )
+        print(
+            f"   {Colors.INFO}•{Colors.RESET} Max Pages: "
+            f"{Colors.WARNING}{config.max_pages}{Colors.RESET}"
+        )
         if strategy:
-            strategy_desc = "tiered by stars" if strategy == SearchStrategy.TIERED_STARS else "greedy"
-            print(f"   {Colors.INFO}•{Colors.RESET} Strategy: {Colors.SUCCESS}{strategy_desc}{Colors.RESET}")
+            strategy_desc = (
+                "tiered by stars" if strategy == SearchStrategy.TIERED_STARS else "greedy"
+            )
+            print(
+                f"   {Colors.INFO}•{Colors.RESET} Strategy: "
+                f"{Colors.SUCCESS}{strategy_desc}{Colors.RESET}"
+            )
         if sort_order:
             sort_desc = "most stars" if sort_order == SortOrder.STARS else "recently updated"
-            print(f"   {Colors.INFO}•{Colors.RESET} Sort by: {Colors.SUCCESS}{sort_desc}{Colors.RESET}")
+            print(
+                f"   {Colors.INFO}•{Colors.RESET} Sort by: "
+                f"{Colors.SUCCESS}{sort_desc}{Colors.RESET}"
+            )
         print()
 
     @staticmethod
@@ -81,12 +104,11 @@ class Display:
         """Format star count with appropriate color and formatting."""
         if stars == "N/A" or not isinstance(stars, int):
             return f"{Colors.WARNING}N/A{Colors.RESET}"
-        elif stars >= 10000:
+        if stars >= 10000:
             return f"{Colors.SUCCESS}⭐ {stars:,}{Colors.RESET}"
-        elif stars >= 1000:
+        if stars >= 1000:
             return f"{Colors.STARS}⭐ {stars:,}{Colors.RESET}"
-        else:
-            return f"{Colors.WARNING}⭐ {stars}{Colors.RESET}"
+        return f"{Colors.WARNING}⭐ {stars}{Colors.RESET}"
 
     @staticmethod
     def format_updated_at(updated_at: str) -> str:
@@ -101,7 +123,9 @@ class Display:
             return ""
 
     @staticmethod
-    def print_repository(index: int, repo: Dict[str, Any], query: str, sort_order: SortOrder | None = None) -> None:
+    def print_repository(
+        index: int, repo: dict[str, Any], query: str, sort_order: SortOrder | None = None
+    ) -> None:
         """Print a single repository with colorful formatting."""
         # Repository header
         print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
@@ -110,39 +134,41 @@ class Display:
             f"{Colors.REPO_NAME}{repo['name']}{Colors.RESET} "
             f"{Display.format_star_count(repo.get('stars', 'N/A'))}"
         )
-        
+
         # Show updated date if sorting by updated
         if sort_order == SortOrder.UPDATED and repo.get("updated_at"):
             print(f"    {Display.format_updated_at(repo['updated_at'])}")
-        
+
         # Description
         if repo.get("description"):
             desc = repo["description"]
             if len(desc) > 100:
                 desc = desc[:97] + "..."
             print(f"    {Colors.DESCRIPTION}📝 {desc}{Colors.RESET}")
-        
+
         # File count
         file_count = len(repo["files"])
         if file_count > 0:
             plural = "s" if file_count != 1 else ""
-            print(f"    {Colors.FILES}📁 {file_count} file{plural} containing '{query}'{Colors.RESET}")
-            
+            print(
+                f"    {Colors.FILES}📁 {file_count} file{plural} containing '{query}'{Colors.RESET}"
+            )
+
             # Show files with keyword information
             Display._print_file_list(repo["files"])
-        
+
         # URL
         if repo.get("url"):
             print(f"    {Colors.URL}🔗 {repo['url']}{Colors.RESET}")
-        
+
         print()
 
     @staticmethod
-    def _print_file_list(files: List[Dict[str, Any]]) -> None:
+    def _print_file_list(files: list[dict[str, Any]]) -> None:
         """Print the list of files with keyword match information."""
         for file in files[:MAX_FILES_PREVIEW]:
             file_line = f"    {Colors.FILES}├─{Colors.RESET} {file['path']}"
-            
+
             # Add keyword match information (only if keywords were searched)
             keyword_match = file.get("keyword_match")
             if keyword_match is True:
@@ -151,21 +177,26 @@ class Display:
             elif keyword_match is False:
                 file_line += f" {Colors.WARNING}[No keywords matched]{Colors.RESET}"
             # keyword_match is None means keywords weren't searched - don't show anything
-            
+
             print(file_line)
-        
+
         if len(files) > MAX_FILES_PREVIEW:
             remaining = len(files) - MAX_FILES_PREVIEW
             plural = "s" if remaining != 1 else ""
-            print(f"    {Colors.FILES}└─{Colors.RESET} {Colors.WARNING}... and {remaining} more file{plural}{Colors.RESET}")
+            print(
+                f"    {Colors.FILES}└─{Colors.RESET} {Colors.WARNING}"
+                f"... and {remaining} more file{plural}{Colors.RESET}"
+            )
 
     @staticmethod
-    def print_results(repos: List[Dict[str, Any]], query: str, sort_order: SortOrder | None = None) -> None:
+    def print_results(
+        repos: list[dict[str, Any]], query: str, sort_order: SortOrder | None = None
+    ) -> None:
         """Print the list of repositories."""
         if not repos:
             print(f"{Colors.WARNING}📭 No repositories found matching your criteria.{Colors.RESET}")
             return
-        
+
         if sort_order == SortOrder.UPDATED:
             print(f"{Colors.SUCCESS}🎯 TOP REPOSITORIES BY RECENTLY UPDATED:{Colors.RESET}")
         else:
@@ -177,7 +208,11 @@ class Display:
     def print_no_results_hint(has_keywords: bool) -> None:
         """Print helpful hints when no results are found."""
         if has_keywords:
-            print(f"{Colors.INFO}💡 Try with fewer or different keywords, or search without keyword filtering.{Colors.RESET}")
+            print(
+                f"{Colors.INFO}💡 Try with fewer or different keywords, "
+                f"or search without keyword filtering.{Colors.RESET}"
+            )
+
 
 # =============================================================================
 # CLI Argument Parsing
@@ -188,28 +223,28 @@ Examples:
 
     # Search for a pattern (uses tiered star search by default)
     scanipy --query "extractall"
-    
+
     # Search for a specific language
     scanipy --query "pickle.loads" --language python
-  
+
     # Search with keyword filtering
     scanipy --query "extractall" --keywords "path,directory,zip" --language python
-  
-    # Search with a higher page limit 
+
+    # Search with a higher page limit
     scanipy --query "pickle.loads" --pages 10
-  
+
     # Use greedy search (faster but may miss high-star repos)
     scanipy --query "extractall" --search-strategy greedy
-    
+
     # Search in specific file types
     scanipy --query "os.system" --language python --extension ".py"
-  
+
     # Search with additional filters
     scanipy --query "subprocess.call" --additional-params "stars:>100"
-    
+
     # Run Semgrep on top repositories
     scanipy --query "extractall" --run-semgrep
-    
+
     # Run Semgrep with custom rules
     scanipy --query "extractall" --run-semgrep --rules ./my_rules.yaml
 """
@@ -218,7 +253,10 @@ Examples:
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
     parser = argparse.ArgumentParser(
-        description="Search for open source repositories containing specific code patterns and sort by stars.",
+        description=(
+            "Search for open source repositories containing "
+            "specific code patterns and sort by stars."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EPILOG,
     )
@@ -226,22 +264,26 @@ def create_argument_parser() -> argparse.ArgumentParser:
     # Search query parameters
     search_group = parser.add_argument_group("Search Options")
     search_group.add_argument(
-        "--query", "-q",
+        "--query",
+        "-q",
         required=True,
         help='Code pattern to search for (e.g., "extractall")',
     )
     search_group.add_argument(
-        "--language", "-l",
+        "--language",
+        "-l",
         default="",
         help="Programming language to search in (e.g., python)",
     )
     search_group.add_argument(
-        "--extension", "-e",
+        "--extension",
+        "-e",
         default="",
         help='File extension to search in (e.g., ".py", ".ipynb")',
     )
     search_group.add_argument(
-        "--keywords", "-k",
+        "--keywords",
+        "-k",
         default="",
         help='Comma-separated keywords to look for in files (e.g., "path,directory,zip")',
     )
@@ -251,22 +293,34 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help='Additional search parameters (e.g., "stars:>100 -org:microsoft")',
     )
     search_group.add_argument(
-        "--pages", "-p",
+        "--pages",
+        "-p",
         type=int,
         default=DEFAULT_MAX_PAGES,
-        help=f"Maximum number of pages to retrieve (default: {DEFAULT_MAX_PAGES}, max 10 pages = 1000 results)",
+        help=(
+            f"Maximum number of pages to retrieve "
+            f"(default: {DEFAULT_MAX_PAGES}, max 10 pages = 1000 results)"
+        ),
     )
     search_group.add_argument(
-        "--search-strategy", "-s",
+        "--search-strategy",
+        "-s",
         choices=["tiered", "greedy"],
         default="tiered",
-        help="Search strategy: 'tiered' searches by star ranges (10k+, 1k-10k, etc.) to prioritize popular repos; 'greedy' is faster but may miss high-star repos (default: tiered)",
+        help=(
+            "Search strategy: 'tiered' searches by star ranges (10k+, 1k-10k, etc.) "
+            "to prioritize popular repos; 'greedy' is faster but may miss high-star "
+            "repos (default: tiered)"
+        ),
     )
     search_group.add_argument(
         "--sort-by",
         choices=["stars", "updated"],
         default="stars",
-        help="Sort results by: 'stars' (most starred first) or 'updated' (most recently updated first) (default: stars)",
+        help=(
+            "Sort results by: 'stars' (most starred first) or 'updated' "
+            "(most recently updated first) (default: stars)"
+        ),
     )
 
     # GitHub API authentication
@@ -279,12 +333,14 @@ def create_argument_parser() -> argparse.ArgumentParser:
     # Output options
     output_group = parser.add_argument_group("Output Options")
     output_group.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default=DEFAULT_OUTPUT_FILE,
         help=f"Output JSON file path (default: {DEFAULT_OUTPUT_FILE})",
     )
     output_group.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable verbose output",
     )
@@ -325,17 +381,19 @@ def create_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_keywords(keywords_str: str) -> List[str]:
+def parse_keywords(keywords_str: str) -> list[str]:
     """Parse comma-separated keywords string into a list."""
     if not keywords_str:
         return []
     return [kw.strip() for kw in keywords_str.split(",") if kw.strip()]
 
 
-def build_configs_from_args(args: argparse.Namespace) -> tuple[SearchConfig, SemgrepConfig, str, SearchStrategy, SortOrder]:
+def build_configs_from_args(
+    args: argparse.Namespace,
+) -> tuple[SearchConfig, SemgrepConfig, str, SearchStrategy, SortOrder]:
     """
     Build configuration objects from parsed arguments.
-    
+
     Returns:
         Tuple of (SearchConfig, SemgrepConfig, github_token, search_strategy, sort_order)
     """
@@ -347,7 +405,7 @@ def build_configs_from_args(args: argparse.Namespace) -> tuple[SearchConfig, Sem
         additional_params=args.additional_params,
         max_pages=args.pages,
     )
-    
+
     semgrep_config = SemgrepConfig(
         enabled=args.run_semgrep,
         args=args.semgrep_args,
@@ -356,24 +414,24 @@ def build_configs_from_args(args: argparse.Namespace) -> tuple[SearchConfig, Sem
         keep_cloned=args.keep_cloned,
         use_pro=args.pro,
     )
-    
+
     # Resolve GitHub token
     github_token = args.github_token or os.getenv("GITHUB_TOKEN")
-    
+
     # Resolve search strategy
     strategy_map = {
         "tiered": SearchStrategy.TIERED_STARS,
         "greedy": SearchStrategy.GREEDY,
     }
     search_strategy = strategy_map[args.search_strategy]
-    
+
     # Resolve sort order
     sort_map = {
         "stars": SortOrder.STARS,
         "updated": SortOrder.UPDATED,
     }
     sort_order = sort_map[args.sort_by]
-    
+
     return search_config, semgrep_config, github_token, search_strategy, sort_order
 
 
@@ -381,13 +439,14 @@ def build_configs_from_args(args: argparse.Namespace) -> tuple[SearchConfig, Sem
 # Core Application Logic
 # =============================================================================
 
+
 def run_semgrep_analysis(
-    repos: List[Dict[str, Any]],
+    repos: list[dict[str, Any]],
     config: SemgrepConfig,
 ) -> None:
     """
     Run Semgrep analysis on the provided repositories.
-    
+
     Args:
         repos: List of repository dictionaries
         config: Semgrep configuration
@@ -406,16 +465,18 @@ def run_semgrep_analysis(
 def main() -> int:
     """
     Main entry point for the scanipy CLI.
-    
+
     Returns:
         Exit code (0 for success, non-zero for errors)
     """
     parser = create_argument_parser()
     args = parser.parse_args()
-    
+
     # Build configuration objects
-    search_config, semgrep_config, github_token, search_strategy, sort_order = build_configs_from_args(args)
-    
+    search_config, semgrep_config, github_token, search_strategy, sort_order = (
+        build_configs_from_args(args)
+    )
+
     # Validate GitHub token
     if not github_token:
         print(
@@ -423,28 +484,29 @@ def main() -> int:
             f"or --github-token argument must be set.{Colors.RESET}"
         )
         return 1
-    
+
     # Display banner and search info
     Display.print_banner()
     Display.print_search_info(search_config, strategy=search_strategy, sort_order=sort_order)
-    
+
     # Perform GitHub search
-    repos = search_repositories(search_config, github_token, strategy=search_strategy, sort_order=sort_order)
-    
+    repos = search_repositories(
+        search_config, github_token, strategy=search_strategy, sort_order=sort_order
+    )
+
     # Display results
     if repos:
         Display.print_results(repos, search_config.query, sort_order=sort_order)
-        
+
         # Run Semgrep analysis if requested
         if semgrep_config.enabled:
             run_semgrep_analysis(repos, semgrep_config)
     else:
         Display.print_results(repos, search_config.query, sort_order=sort_order)
         Display.print_no_results_hint(bool(search_config.keywords))
-    
+
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

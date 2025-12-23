@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from integrations.github.search import (
     SearchStrategy,
     SortOrder,
@@ -58,15 +56,15 @@ class TestSearchRepositories:
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {}
         mock_graphql_api.return_value = mock_graphql_instance
-        
+
         search_repositories(
             sample_search_config, mock_github_token, strategy=SearchStrategy.TIERED_STARS
         )
-        
+
         mock_rest_instance.search_by_stars.assert_called_once()
         mock_rest_instance.search.assert_not_called()
 
@@ -79,15 +77,13 @@ class TestSearchRepositories:
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {}
         mock_graphql_api.return_value = mock_graphql_instance
-        
-        search_repositories(
-            sample_search_config, mock_github_token, strategy=SearchStrategy.GREEDY
-        )
-        
+
+        search_repositories(sample_search_config, mock_github_token, strategy=SearchStrategy.GREEDY)
+
         mock_rest_instance.search.assert_called_once()
         mock_rest_instance.search_by_stars.assert_not_called()
 
@@ -98,17 +94,17 @@ class TestSearchRepositories:
     ):
         """Test search_repositories applies keyword filtering when keywords specified."""
         config = SearchConfig(query="test", keywords=["path", "directory"])
-        
+
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {}
         mock_graphql_api.return_value = mock_graphql_instance
-        
+
         search_repositories(config, mock_github_token, strategy=SearchStrategy.GREEDY)
-        
+
         mock_rest_instance.filter_by_keywords.assert_called_once_with(["path", "directory"])
 
     @patch("integrations.github.search.GraphQLAPI")
@@ -118,17 +114,17 @@ class TestSearchRepositories:
     ):
         """Test search_repositories skips keyword filtering when no keywords."""
         config = SearchConfig(query="test", keywords=[])
-        
+
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {}
         mock_graphql_api.return_value = mock_graphql_instance
-        
+
         search_repositories(config, mock_github_token, strategy=SearchStrategy.GREEDY)
-        
+
         mock_rest_instance.filter_by_keywords.assert_not_called()
 
     @patch("integrations.github.search.GraphQLAPI")
@@ -140,15 +136,13 @@ class TestSearchRepositories:
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {"owner/repo": {"files": []}}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {"owner/repo": {"files": [], "stars": 100}}
         mock_graphql_api.return_value = mock_graphql_instance
-        
-        search_repositories(
-            sample_search_config, mock_github_token, strategy=SearchStrategy.GREEDY
-        )
-        
+
+        search_repositories(sample_search_config, mock_github_token, strategy=SearchStrategy.GREEDY)
+
         mock_graphql_api.assert_called_once()
         mock_graphql_instance.batch_query.assert_called_once()
 
@@ -161,18 +155,18 @@ class TestSearchRepositories:
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {
             "low_stars": {"stars": 100, "updated_at": "2024-12-22"},
             "high_stars": {"stars": 1000, "updated_at": "2024-12-20"},
         }
         mock_graphql_api.return_value = mock_graphql_instance
-        
+
         results = search_repositories(
             sample_search_config, mock_github_token, strategy=SearchStrategy.GREEDY
         )
-        
+
         # Should be sorted by stars descending
         assert results[0]["stars"] == 1000
         assert results[1]["stars"] == 100
@@ -186,21 +180,21 @@ class TestSearchRepositories:
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {
             "old_update": {"stars": 1000, "updated_at": "2024-12-20"},
             "new_update": {"stars": 100, "updated_at": "2024-12-22"},
         }
         mock_graphql_api.return_value = mock_graphql_instance
-        
+
         results = search_repositories(
             sample_search_config,
             mock_github_token,
             strategy=SearchStrategy.GREEDY,
             sort_order=SortOrder.UPDATED,
         )
-        
+
         # Should be sorted by updated_at descending
         assert results[0]["updated_at"] == "2024-12-22"
         assert results[1]["updated_at"] == "2024-12-20"
@@ -214,13 +208,13 @@ class TestSearchRepositories:
         mock_rest_instance = MagicMock()
         mock_rest_instance.repositories = {}
         mock_rest_api.return_value = mock_rest_instance
-        
+
         mock_graphql_instance = MagicMock()
         mock_graphql_instance.repositories = {}
         mock_graphql_api.return_value = mock_graphql_instance
-        
+
         results = search_repositories(
             sample_search_config, mock_github_token, strategy=SearchStrategy.GREEDY
         )
-        
+
         assert isinstance(results, list)

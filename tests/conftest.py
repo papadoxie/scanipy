@@ -27,6 +27,7 @@ def mock_env_token(mock_github_token):
 def sample_search_config():
     """Create a sample SearchConfig for testing."""
     from models import SearchConfig
+
     return SearchConfig(
         query="extractall",
         language="python",
@@ -42,6 +43,7 @@ def sample_search_config():
 def sample_semgrep_config():
     """Create a sample SemgrepConfig for testing."""
     from models import SemgrepConfig
+
     return SemgrepConfig(
         enabled=True,
         args="--json",

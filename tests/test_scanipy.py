@@ -2,22 +2,21 @@
 
 import argparse
 import os
-import sys
-from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+
+from integrations.github.search import SearchStrategy, SortOrder
+from models import SearchConfig, SemgrepConfig
 
 # Import after path setup in conftest
 from scanipy import (
     Display,
-    create_argument_parser,
-    parse_keywords,
     build_configs_from_args,
+    create_argument_parser,
     main,
+    parse_keywords,
 )
-from models import Colors, SearchConfig, SemgrepConfig
-from integrations.github.search import SearchStrategy, SortOrder
 
 
 class TestParseKeywords:
@@ -161,10 +160,10 @@ class TestBuildConfigsFromArgs:
         """Test build_configs_from_args returns correct tuple."""
         parser = create_argument_parser()
         args = parser.parse_args(["--query", "test"])
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             result = build_configs_from_args(args)
-        
+
         assert len(result) == 5
         assert isinstance(result[0], SearchConfig)
         assert isinstance(result[1], SemgrepConfig)
@@ -175,17 +174,24 @@ class TestBuildConfigsFromArgs:
     def test_search_config_populated(self):
         """Test SearchConfig is populated correctly."""
         parser = create_argument_parser()
-        args = parser.parse_args([
-            "--query", "extractall",
-            "--language", "python",
-            "--extension", ".py",
-            "--keywords", "path,directory",
-            "--pages", "10",
-        ])
-        
+        args = parser.parse_args(
+            [
+                "--query",
+                "extractall",
+                "--language",
+                "python",
+                "--extension",
+                ".py",
+                "--keywords",
+                "path,directory",
+                "--pages",
+                "10",
+            ]
+        )
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             search_config, _, _, _, _ = build_configs_from_args(args)
-        
+
         assert search_config.query == "extractall"
         assert search_config.language == "python"
         assert search_config.extension == ".py"
@@ -195,19 +201,24 @@ class TestBuildConfigsFromArgs:
     def test_semgrep_config_populated(self):
         """Test SemgrepConfig is populated correctly."""
         parser = create_argument_parser()
-        args = parser.parse_args([
-            "--query", "test",
-            "--run-semgrep",
-            "--semgrep-args=--json --verbose",
-            "--rules", "/path/to/rules.yaml",
-            "--clone-dir", "/tmp/repos",
-            "--keep-cloned",
-            "--pro",
-        ])
-        
+        args = parser.parse_args(
+            [
+                "--query",
+                "test",
+                "--run-semgrep",
+                "--semgrep-args=--json --verbose",
+                "--rules",
+                "/path/to/rules.yaml",
+                "--clone-dir",
+                "/tmp/repos",
+                "--keep-cloned",
+                "--pro",
+            ]
+        )
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             _, semgrep_config, _, _, _ = build_configs_from_args(args)
-        
+
         assert semgrep_config.enabled is True
         assert semgrep_config.args == "--json --verbose"
         assert semgrep_config.rules_path == "/path/to/rules.yaml"
@@ -218,64 +229,68 @@ class TestBuildConfigsFromArgs:
     def test_token_from_arg(self):
         """Test token is taken from argument."""
         parser = create_argument_parser()
-        args = parser.parse_args([
-            "--query", "test",
-            "--github-token", "arg_token",
-        ])
-        
+        args = parser.parse_args(
+            [
+                "--query",
+                "test",
+                "--github-token",
+                "arg_token",
+            ]
+        )
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "env_token"}):
             _, _, token, _, _ = build_configs_from_args(args)
-        
+
         assert token == "arg_token"
 
     def test_token_from_env(self):
         """Test token is taken from environment."""
         parser = create_argument_parser()
         args = parser.parse_args(["--query", "test"])
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "env_token"}):
             _, _, token, _, _ = build_configs_from_args(args)
-        
+
         assert token == "env_token"
 
     def test_search_strategy_tiered(self):
         """Test search strategy is TIERED_STARS."""
         parser = create_argument_parser()
         args = parser.parse_args(["--query", "test", "--search-strategy", "tiered"])
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             _, _, _, strategy, _ = build_configs_from_args(args)
-        
+
         assert strategy == SearchStrategy.TIERED_STARS
 
     def test_search_strategy_greedy(self):
         """Test search strategy is GREEDY."""
         parser = create_argument_parser()
         args = parser.parse_args(["--query", "test", "--search-strategy", "greedy"])
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             _, _, _, strategy, _ = build_configs_from_args(args)
-        
+
         assert strategy == SearchStrategy.GREEDY
 
     def test_sort_order_stars(self):
         """Test sort order is STARS."""
         parser = create_argument_parser()
         args = parser.parse_args(["--query", "test", "--sort-by", "stars"])
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             _, _, _, _, sort_order = build_configs_from_args(args)
-        
+
         assert sort_order == SortOrder.STARS
 
     def test_sort_order_updated(self):
         """Test sort order is UPDATED."""
         parser = create_argument_parser()
         args = parser.parse_args(["--query", "test", "--sort-by", "updated"])
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             _, _, _, _, sort_order = build_configs_from_args(args)
-        
+
         assert sort_order == SortOrder.UPDATED
 
 
@@ -489,11 +504,11 @@ class TestMain:
     ):
         """Test main function executes successfully."""
         mock_search.return_value = [{"name": "repo", "stars": 100}]
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             with patch("sys.argv", ["scanipy", "--query", "test"]):
                 exit_code = main()
-        
+
         assert exit_code == 0
         mock_banner.assert_called_once()
         mock_search.assert_called_once()
@@ -505,7 +520,7 @@ class TestMain:
                 del os.environ["GITHUB_TOKEN"]
             with patch("sys.argv", ["scanipy", "--query", "test"]):
                 exit_code = main()
-        
+
         assert exit_code == 1
         captured = capsys.readouterr()
         assert "GITHUB_TOKEN" in captured.out
@@ -525,11 +540,11 @@ class TestMain:
     ):
         """Test main function runs semgrep when flag is set."""
         mock_search.return_value = [{"name": "repo", "stars": 100}]
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             with patch("sys.argv", ["scanipy", "--query", "test", "--run-semgrep"]):
                 exit_code = main()
-        
+
         assert exit_code == 0
         mock_semgrep.assert_called_once()
 
@@ -546,11 +561,11 @@ class TestMain:
     ):
         """Test main function handles empty results."""
         mock_search.return_value = []
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             with patch("sys.argv", ["scanipy", "--query", "nonexistent"]):
                 exit_code = main()
-        
+
         assert exit_code == 0
         mock_print_results.assert_called()
 
@@ -569,11 +584,11 @@ class TestMain:
     ):
         """Test main function shows hint when empty results with keywords."""
         mock_search.return_value = []
-        
+
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             with patch("sys.argv", ["scanipy", "--query", "test", "--keywords", "path,dir"]):
                 exit_code = main()
-        
+
         assert exit_code == 0
         mock_hint.assert_called_once_with(True)
 
@@ -583,11 +598,12 @@ class TestDisplayFormatEdgeCases:
 
     def test_format_updated_at_exception_handling(self):
         """Test format_updated_at handles exceptions gracefully."""
+
         # Test with a value that causes an exception in split
         class BadString:
             def split(self, *args):
                 raise ValueError("Bad value")
-        
+
         # The method should return empty string on exception
         result = Display.format_updated_at("")
         assert result == ""
@@ -600,11 +616,12 @@ class TestDisplayFormatEdgeCases:
 
     def test_format_updated_at_index_error(self):
         """Test format_updated_at handles IndexError."""
+
         # Create a mock object that raises IndexError when accessing [0]
         class BadSplit:
             def split(self, *args):
                 return []  # Empty list, [0] will raise IndexError
-        
+
         # This won't work directly since we check for empty string first
         # But we can test with an object that has split returning empty list
         result = Display.format_updated_at("")
@@ -623,12 +640,12 @@ class TestRunSemgrepAnalysis:
     @patch("scanipy.analyze_repositories_with_semgrep")
     def test_run_semgrep_analysis_called(self, mock_analyze):
         """Test run_semgrep_analysis calls analyze function."""
-        from scanipy import run_semgrep_analysis
         from models import SemgrepConfig
-        
+        from scanipy import run_semgrep_analysis
+
         repos = [{"name": "test/repo", "url": "https://github.com/test/repo"}]
         config = SemgrepConfig(enabled=True)
-        
+
         run_semgrep_analysis(repos, config)
-        
+
         mock_analyze.assert_called_once()

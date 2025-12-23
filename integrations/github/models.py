@@ -7,7 +7,6 @@ values used by the GitHub API clients.
 
 from __future__ import annotations
 
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -43,11 +42,11 @@ PROGRESS_UPDATE_INTERVAL = 10
 # Star tiers for tiered search (highest to lowest priority)
 # Each tier is (min_stars, max_stars or None for unlimited)
 DEFAULT_STAR_TIERS = [
-    (10000, None),      # 10k+ stars - most popular
-    (1000, 9999),       # 1k-10k stars
-    (100, 999),         # 100-1k stars
-    (10, 99),           # 10-100 stars
-    (0, 9),             # <10 stars - least popular
+    (10000, None),  # 10k+ stars - most popular
+    (1000, 9999),  # 1k-10k stars
+    (100, 999),  # 100-1k stars
+    (10, 99),  # 10-100 stars
+    (0, 9),  # <10 stars - least popular
 ]
 
 # Maximum results per tier (to balance coverage across tiers)
@@ -57,6 +56,7 @@ DEFAULT_PAGES_PER_TIER = 2
 # =============================================================================
 # Exceptions
 # =============================================================================
+
 
 class GitHubAPIError(Exception):
     """Raised when a GitHub API request fails."""

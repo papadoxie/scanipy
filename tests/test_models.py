@@ -1,16 +1,14 @@
 """Tests for the models module."""
 
-import pytest
-
 from models import (
+    DEFAULT_MAX_PAGES,
+    DEFAULT_OUTPUT_FILE,
+    DEFAULT_PER_PAGE,
+    MAX_DISPLAY_REPOS,
+    MAX_FILES_PREVIEW,
     Colors,
     SearchConfig,
     SemgrepConfig,
-    DEFAULT_MAX_PAGES,
-    DEFAULT_PER_PAGE,
-    DEFAULT_OUTPUT_FILE,
-    MAX_DISPLAY_REPOS,
-    MAX_FILES_PREVIEW,
 )
 
 

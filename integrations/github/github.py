@@ -14,48 +14,49 @@ import re
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 import requests
 
 from models import Colors
 
 from .models import (
-    GITHUB_REST_SEARCH_URL,
-    GITHUB_REPO_SEARCH_URL,
-    GITHUB_GRAPHQL_URL,
-    DEFAULT_TIMEOUT,
+    BATCH_QUERY_DELAY,
     CONTENT_FETCH_TIMEOUT,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_MAX_PAGES,
+    DEFAULT_PAGES_PER_TIER,
+    DEFAULT_PER_PAGE,
+    DEFAULT_STAR_TIERS,
+    DEFAULT_TIMEOUT,
+    GITHUB_GRAPHQL_URL,
+    GITHUB_REPO_SEARCH_URL,
+    GITHUB_REST_SEARCH_URL,
+    KEYWORD_FILTER_DELAY,
     MAX_RETRIES,
-    RETRY_DELAY,
-    RETRY_BACKOFF,
+    PROGRESS_UPDATE_INTERVAL,
     RATE_LIMIT_DELAY,
     RATE_LIMIT_FALLBACK_DELAY,
-    KEYWORD_FILTER_DELAY,
-    BATCH_QUERY_DELAY,
-    DEFAULT_PER_PAGE,
-    DEFAULT_MAX_PAGES,
-    DEFAULT_BATCH_SIZE,
-    PROGRESS_UPDATE_INTERVAL,
-    DEFAULT_STAR_TIERS,
-    DEFAULT_PAGES_PER_TIER,
+    RETRY_BACKOFF,
+    RETRY_DELAY,
     GitHubAPIError,
     GitHubNetworkError,
     GitHubRateLimitError,
 )
 
-
 # =============================================================================
 # Base Client
 # =============================================================================
+
 
 class BaseGitHubClient(ABC):
     """Abstract base class for GitHub API clients."""
 
     def __init__(
         self,
-        token: Optional[str] = None,
-        repositories: Optional[Dict[str, Any]] = None,
+        token: str | None = None,
+        repositories: dict[str, Any] | None = None,
     ) -> None:
         """
         Initialize the GitHub client.
@@ -70,16 +71,14 @@ class BaseGitHubClient(ABC):
         self.token = token or os.getenv("GITHUB_TOKEN")
         if not self.token:
             raise GitHubAPIError("GITHUB_TOKEN environment variable not set.")
-        self.repositories: Dict[str, Any] = repositories or defaultdict(
-            lambda: {"files": []}
-        )
+        self.repositories: dict[str, Any] = repositories or defaultdict(lambda: {"files": []})
 
     @property
     @abstractmethod
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         """Return headers for API requests."""
 
-    def _create_repo_entry(self, repo_name: str) -> Dict[str, Any]:
+    def _create_repo_entry(self, repo_name: str) -> dict[str, Any]:
         """Create a default repository entry structure."""
         return {
             "name": repo_name,
@@ -93,8 +92,8 @@ class BaseGitHubClient(ABC):
         self,
         path: str,
         url: str,
-        raw_url: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        raw_url: str | None = None,
+    ) -> dict[str, Any]:
         """Create a default file entry structure."""
         return {
             "path": path,
@@ -131,7 +130,7 @@ class BaseGitHubClient(ABC):
         kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
         kwargs.setdefault("headers", self._headers)
 
-        last_exception: Optional[Exception] = None
+        last_exception: Exception | None = None
 
         for attempt in range(max_retries):
             try:
@@ -171,11 +170,11 @@ class BaseGitHubClient(ABC):
 
             # Wait before retrying with exponential backoff
             if attempt < max_retries - 1:
-                delay = RETRY_DELAY * (RETRY_BACKOFF ** attempt)
+                delay = RETRY_DELAY * (RETRY_BACKOFF**attempt)
                 print(
                     f"\n{Colors.WARNING}⚠️  Request failed, retrying in {delay:.1f}s "
                     f"(attempt {attempt + 1}/{max_retries})...{Colors.RESET}",
-                    end=" "
+                    end=" ",
                 )
                 time.sleep(delay)
 
@@ -187,11 +186,12 @@ class BaseGitHubClient(ABC):
 # REST API Client
 # =============================================================================
 
+
 class RestAPI(BaseGitHubClient):
     """Client for GitHub's REST API code search endpoint."""
 
     @property
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         return {
             "Authorization": f"token {self.token}",
             "Accept": "application/vnd.github.v3+json",
@@ -204,11 +204,11 @@ class RestAPI(BaseGitHubClient):
     def search(
         self,
         query: str,
-        language: Optional[str] = None,
-        extension: Optional[str] = None,
+        language: str | None = None,
+        extension: str | None = None,
         per_page: int = DEFAULT_PER_PAGE,
         max_pages: int = DEFAULT_MAX_PAGES,
-        additional_params: Optional[str] = None,
+        additional_params: str | None = None,
     ) -> None:
         """
         Search GitHub for code matching the query.
@@ -222,7 +222,7 @@ class RestAPI(BaseGitHubClient):
             additional_params: Additional GitHub search qualifiers.
         """
         full_query = self._build_search_query(query, language, extension, additional_params)
-        params: Dict[str, Any] = {"q": full_query, "per_page": per_page}
+        params: dict[str, Any] = {"q": full_query, "per_page": per_page}
 
         print(f"{Colors.INFO}🔍 Searching GitHub for: {Colors.WARNING}'{full_query}'{Colors.RESET}")
 
@@ -238,24 +238,25 @@ class RestAPI(BaseGitHubClient):
                 break
 
             if not items:
-                print(f"{Colors.WARNING}ℹ️  No more results found.{Colors.RESET}")
+                print(f"{Colors.WARNING}(i) No more results found.{Colors.RESET}")
                 break
 
             self._process_search_results(items)
             self._handle_rate_limit(response)
 
-        print(f"{Colors.SUCCESS}✅ Search complete! Found {len(self.repositories)} unique repositories{Colors.RESET}")
+        repo_count = len(self.repositories)
+        print(f"{Colors.SUCCESS}✅ Search complete! Found {repo_count} unique repos{Colors.RESET}")
         print()
 
     def search_by_stars(
         self,
         query: str,
-        language: Optional[str] = None,
-        extension: Optional[str] = None,
+        language: str | None = None,
+        extension: str | None = None,
         per_page: int = DEFAULT_PER_PAGE,
         pages_per_tier: int = DEFAULT_PAGES_PER_TIER,
-        star_tiers: Optional[List[Tuple[int, Optional[int]]]] = None,
-        additional_params: Optional[str] = None,
+        star_tiers: list[tuple[int, int | None]] | None = None,
+        additional_params: str | None = None,
     ) -> None:
         """
         Search GitHub for code using tiered star-based searching.
@@ -279,7 +280,9 @@ class RestAPI(BaseGitHubClient):
         tiers = star_tiers or DEFAULT_STAR_TIERS
 
         print(f"{Colors.HEADER}{'═' * 60}{Colors.RESET}")
-        print(f"{Colors.INFO}🌟 Starting tiered star search across {len(tiers)} tiers{Colors.RESET}")
+        print(
+            f"{Colors.INFO}🌟 Starting tiered star search across {len(tiers)} tiers{Colors.RESET}"
+        )
         print(f"{Colors.HEADER}{'═' * 60}{Colors.RESET}")
 
         total_repos_before = len(self.repositories)
@@ -298,10 +301,14 @@ class RestAPI(BaseGitHubClient):
             )
 
             if not candidate_repos:
-                print(f"{Colors.WARNING}  ℹ️  No repositories found in this tier.{Colors.RESET}")
+                print(f"{Colors.WARNING}  (i) No repositories found in this tier.{Colors.RESET}")
                 continue
 
-            print(f"{Colors.PROGRESS}  🔍 Searching for '{query}' in {len(candidate_repos)} repos...{Colors.RESET}")
+            repo_count = len(candidate_repos)
+            print(
+                f"{Colors.PROGRESS}  🔍 Searching for '{query}' "
+                f"in {repo_count} repos...{Colors.RESET}"
+            )
 
             # Step 2: Search for code in these repositories
             repos_with_matches = 0
@@ -320,22 +327,29 @@ class RestAPI(BaseGitHubClient):
                 if matches:
                     repos_with_matches += 1
 
-            print(f"{Colors.SUCCESS}  ✅ Tier complete: {repos_with_matches} repos with matches{Colors.RESET}")
+            print(
+                f"{Colors.SUCCESS}  ✅ Tier complete: "
+                f"{repos_with_matches} repos with matches{Colors.RESET}"
+            )
 
         total_new = len(self.repositories) - total_repos_before
+        total_repos = len(self.repositories)
         print(f"\n{Colors.HEADER}{'═' * 60}{Colors.RESET}")
-        print(f"{Colors.SUCCESS}🎯 Tiered search complete! Found {len(self.repositories)} unique repositories ({total_new} new){Colors.RESET}")
+        print(
+            f"{Colors.SUCCESS}🎯 Tiered search complete! "
+            f"Found {total_repos} repos ({total_new} new){Colors.RESET}"
+        )
         print(f"{Colors.HEADER}{'═' * 60}{Colors.RESET}")
         print()
 
     def _find_repos_by_stars(
         self,
         min_stars: int,
-        max_stars: Optional[int],
-        language: Optional[str] = None,
+        max_stars: int | None,
+        language: str | None = None,
         per_page: int = DEFAULT_PER_PAGE,
         max_pages: int = 1,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Find repositories within a star range using the repository search API.
 
@@ -354,18 +368,21 @@ class RestAPI(BaseGitHubClient):
         if language:
             query_parts.append(f"language:{language}")
 
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "q": " ".join(query_parts),
             "sort": "stars",
             "order": "desc",
             "per_page": per_page,
         }
 
-        repos: List[str] = []
+        repos: list[str] = []
 
         for page in range(1, max_pages + 1):
             params["page"] = page
-            print(f"{Colors.PROGRESS}  📄 Finding repos (page {page}/{max_pages})...{Colors.RESET}", end=" ")
+            print(
+                f"{Colors.PROGRESS}  📄 Finding repos (page {page}/{max_pages})...{Colors.RESET}",
+                end=" ",
+            )
 
             try:
                 response = self._request_with_retry("get", GITHUB_REPO_SEARCH_URL, params=params)
@@ -398,9 +415,9 @@ class RestAPI(BaseGitHubClient):
         self,
         repo_name: str,
         query: str,
-        language: Optional[str] = None,
-        extension: Optional[str] = None,
-        additional_params: Optional[str] = None,
+        language: str | None = None,
+        extension: str | None = None,
+        additional_params: str | None = None,
     ) -> bool:
         """
         Search for code pattern in a specific repository.
@@ -419,7 +436,7 @@ class RestAPI(BaseGitHubClient):
         full_query = self._build_search_query(query, language, extension, additional_params)
         full_query = f"{full_query} repo:{repo_name}"
 
-        params: Dict[str, Any] = {"q": full_query, "per_page": 10}  # Just get first few matches
+        params: dict[str, Any] = {"q": full_query, "per_page": 10}  # Just get first few matches
 
         try:
             response = self._request_with_retry("get", GITHUB_REST_SEARCH_URL, params=params)
@@ -438,25 +455,23 @@ class RestAPI(BaseGitHubClient):
 
         return False
 
-    def _format_tier_label(self, min_stars: int, max_stars: Optional[int]) -> str:
+    def _format_tier_label(self, min_stars: int, max_stars: int | None) -> str:
         """Format a human-readable label for a star tier."""
         if max_stars is None:
             return f"⭐ {min_stars:,}+ stars"
-        elif min_stars == 0:
+        if min_stars == 0:
             return f"⭐ <{max_stars + 1:,} stars"
-        else:
-            return f"⭐ {min_stars:,}-{max_stars:,} stars"
+        return f"⭐ {min_stars:,}-{max_stars:,} stars"
 
-    def _build_star_filter(self, min_stars: int, max_stars: Optional[int]) -> str:
+    def _build_star_filter(self, min_stars: int, max_stars: int | None) -> str:
         """Build a GitHub search star filter string."""
         if max_stars is None:
             return f"stars:>={min_stars}"
-        elif min_stars == 0:
+        if min_stars == 0:
             return f"stars:<={max_stars}"
-        else:
-            return f"stars:{min_stars}..{max_stars}"
+        return f"stars:{min_stars}..{max_stars}"
 
-    def _count_new_repos(self, items: List[Dict[str, Any]]) -> int:
+    def _count_new_repos(self, items: list[dict[str, Any]]) -> int:
         """Count how many items are from repositories not yet seen."""
         new_count = 0
         for item in items:
@@ -476,12 +491,15 @@ class RestAPI(BaseGitHubClient):
         if not keywords_list:
             return
 
-        print(f"{Colors.INFO}🔍 Filtering files by keywords: {Colors.WARNING}{', '.join(keywords_list)}{Colors.RESET}")
+        kw_str = ", ".join(keywords_list)
+        print(
+            f"{Colors.INFO}🔍 Filtering files by keywords: {Colors.WARNING}{kw_str}{Colors.RESET}"
+        )
 
         total_files = sum(len(repo["files"]) for repo in self.repositories.values())
         processed = 0
 
-        for repo_name, repo_data in list(self.repositories.items()):
+        for _repo_name, repo_data in list(self.repositories.items()):
             filtered_files = []
 
             for file_info in repo_data["files"]:
@@ -497,8 +515,10 @@ class RestAPI(BaseGitHubClient):
 
         self._remove_empty_repositories()
 
-        print(f"\n{Colors.SUCCESS}✅ Keyword filtering complete! "
-              f"{len(self.repositories)} repositories have files with matching keywords{Colors.RESET}")
+        print(
+            f"\n{Colors.SUCCESS}✅ Keyword filtering complete! "
+            f"{len(self.repositories)} repositories have files with matching keywords{Colors.RESET}"
+        )
         print()
 
     # -------------------------------------------------------------------------
@@ -508,9 +528,9 @@ class RestAPI(BaseGitHubClient):
     def _build_search_query(
         self,
         query: str,
-        language: Optional[str],
-        extension: Optional[str],
-        additional_params: Optional[str],
+        language: str | None,
+        extension: str | None,
+        additional_params: str | None,
     ) -> str:
         """Build the complete GitHub search query string."""
         parts = [query]
@@ -524,8 +544,8 @@ class RestAPI(BaseGitHubClient):
 
     def _execute_search(
         self,
-        params: Dict[str, Any],
-    ) -> Tuple[requests.Response, List[Dict[str, Any]]]:
+        params: dict[str, Any],
+    ) -> tuple[requests.Response, list[dict[str, Any]]]:
         """Execute a search API request and return response with items."""
         response = self._request_with_retry("get", GITHUB_REST_SEARCH_URL, params=params)
 
@@ -537,7 +557,7 @@ class RestAPI(BaseGitHubClient):
 
         return response, response.json().get("items", [])
 
-    def _process_search_results(self, items: List[Dict[str, Any]]) -> None:
+    def _process_search_results(self, items: list[dict[str, Any]]) -> None:
         """Process search result items and add to repositories."""
         for item in items:
             repo_name = item.get("repository", {}).get("full_name")
@@ -558,9 +578,7 @@ class RestAPI(BaseGitHubClient):
         if repo_name not in self.repositories:
             self.repositories[repo_name] = self._create_repo_entry(repo_name)
 
-        self.repositories[repo_name]["files"].append(
-            self._create_file_entry(file_path, file_url)
-        )
+        self.repositories[repo_name]["files"].append(self._create_file_entry(file_path, file_url))
 
     # -------------------------------------------------------------------------
     # Private Methods - Keyword Filtering
@@ -568,8 +586,8 @@ class RestAPI(BaseGitHubClient):
 
     def _process_file_for_keywords(
         self,
-        file_info: Dict[str, Any],
-        keywords: List[str],
+        file_info: dict[str, Any],
+        keywords: list[str],
     ) -> bool:
         """
         Check a file for keywords and update its info.
@@ -597,13 +615,9 @@ class RestAPI(BaseGitHubClient):
 
     def _convert_to_raw_url(self, github_url: str) -> str:
         """Convert a GitHub file URL to a raw content URL."""
-        return (
-            github_url
-            .replace("github.com", "raw.githubusercontent.com")
-            .replace("/blob/", "/")
-        )
+        return github_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
 
-    def _fetch_file_content(self, raw_url: str) -> Optional[str]:
+    def _fetch_file_content(self, raw_url: str) -> str | None:
         """Fetch the content of a file from its raw URL."""
         try:
             response = requests.get(
@@ -621,21 +635,15 @@ class RestAPI(BaseGitHubClient):
     def _find_keywords_in_content(
         self,
         content: str,
-        keywords: List[str],
-    ) -> List[str]:
+        keywords: list[str],
+    ) -> list[str]:
         """Find which keywords appear in the content."""
         content_lower = content.lower()
-        return [
-            kw for kw in keywords
-            if re.search(re.escape(kw.lower()), content_lower)
-        ]
+        return [kw for kw in keywords if re.search(re.escape(kw.lower()), content_lower)]
 
     def _remove_empty_repositories(self) -> None:
         """Remove repositories that have no files."""
-        empty_repos = [
-            name for name, data in self.repositories.items()
-            if not data["files"]
-        ]
+        empty_repos = [name for name, data in self.repositories.items() if not data["files"]]
         for repo_name in empty_repos:
             del self.repositories[repo_name]
 
@@ -654,7 +662,10 @@ class RestAPI(BaseGitHubClient):
         if int(remaining) < 1:
             reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
             wait_time = max(reset_time - time.time(), 0) + 1
-            print(f"{Colors.WARNING}⏳ Rate limit reached. Waiting {wait_time:.1f} seconds...{Colors.RESET}")
+            print(
+                f"{Colors.WARNING}⏳ Rate limit reached. "
+                f"Waiting {wait_time:.1f} seconds...{Colors.RESET}"
+            )
             time.sleep(wait_time)
         else:
             time.sleep(RATE_LIMIT_DELAY)
@@ -680,11 +691,12 @@ class RestAPI(BaseGitHubClient):
 # GraphQL API Client
 # =============================================================================
 
+
 class GraphQLAPI(BaseGitHubClient):
     """Client for GitHub's GraphQL API to fetch repository metadata."""
 
     @property
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
@@ -708,7 +720,10 @@ class GraphQLAPI(BaseGitHubClient):
         total_batches = (len(repo_names) + batch_size - 1) // batch_size
         batch_label = "batch" if total_batches == 1 else "batches"
 
-        print(f"{Colors.INFO}📊 Fetching repository details in {total_batches} {batch_label}...{Colors.RESET}")
+        print(
+            f"{Colors.INFO}📊 Fetching repository details "
+            f"in {total_batches} {batch_label}...{Colors.RESET}"
+        )
 
         for batch_idx in range(total_batches):
             batch_repos = self._get_batch(repo_names, batch_idx, batch_size)
@@ -724,10 +739,10 @@ class GraphQLAPI(BaseGitHubClient):
 
     def _get_batch(
         self,
-        repo_names: List[str],
+        repo_names: list[str],
         batch_idx: int,
         batch_size: int,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get a slice of repository names for the given batch index."""
         start = batch_idx * batch_size
         end = min(start + batch_size, len(repo_names))
@@ -735,7 +750,7 @@ class GraphQLAPI(BaseGitHubClient):
 
     def _process_batch(
         self,
-        batch_repos: List[str],
+        batch_repos: list[str],
         batch_num: int,
         total_batches: int,
     ) -> None:
@@ -757,7 +772,7 @@ class GraphQLAPI(BaseGitHubClient):
         except GitHubAPIError as exc:
             print(f"{Colors.ERROR}✗ Error: {exc}{Colors.RESET}")
 
-    def _fetch_batch_data(self, repo_names: List[str]) -> Dict[str, Any]:
+    def _fetch_batch_data(self, repo_names: list[str]) -> dict[str, Any]:
         """Fetch repository data for a batch using GraphQL."""
         query = self._build_graphql_query(repo_names)
 
@@ -768,13 +783,11 @@ class GraphQLAPI(BaseGitHubClient):
         )
 
         if response.status_code != 200:
-            raise GitHubAPIError(
-                f"GraphQL API request failed with status {response.status_code}"
-            )
+            raise GitHubAPIError(f"GraphQL API request failed with status {response.status_code}")
 
         return response.json()
 
-    def _build_graphql_query(self, repo_names: List[str]) -> str:
+    def _build_graphql_query(self, repo_names: list[str]) -> str:
         """Build a GraphQL query for multiple repositories."""
         repo_queries = []
 
@@ -794,8 +807,8 @@ class GraphQLAPI(BaseGitHubClient):
 
     def _update_repositories_from_response(
         self,
-        response_data: Dict[str, Any],
-        batch_repos: List[str],
+        response_data: dict[str, Any],
+        batch_repos: list[str],
     ) -> None:
         """Update repository data from GraphQL response."""
         if "errors" in response_data:
@@ -806,9 +819,11 @@ class GraphQLAPI(BaseGitHubClient):
         for i, repo_name in enumerate(batch_repos):
             repo_data = data.get(f"repo{i}")
             if repo_data:
-                self.repositories[repo_name].update({
-                    "stars": repo_data.get("stargazerCount", 0),
-                    "description": repo_data.get("description") or "",
-                    "url": repo_data.get("url", ""),
-                    "updated_at": repo_data.get("updatedAt", ""),
-                })
+                self.repositories[repo_name].update(
+                    {
+                        "stars": repo_data.get("stargazerCount", 0),
+                        "description": repo_data.get("description") or "",
+                        "url": repo_data.get("url", ""),
+                        "updated_at": repo_data.get("updatedAt", ""),
+                    }
+                )

@@ -8,7 +8,6 @@ including configuration objects and shared constants.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from colorama import Fore, Style
 
@@ -27,9 +26,10 @@ MAX_FILES_PREVIEW = 3
 # Color Configuration
 # =============================================================================
 
+
 class Colors:
     """Terminal color and styling configuration using colorama."""
-    
+
     HEADER = Fore.CYAN + Style.BRIGHT
     SUCCESS = Fore.GREEN + Style.BRIGHT
     WARNING = Fore.YELLOW + Style.BRIGHT
@@ -48,18 +48,19 @@ class Colors:
 # Configuration Data Classes
 # =============================================================================
 
+
 @dataclass
 class SearchConfig:
     """Configuration for GitHub code search."""
-    
+
     query: str
     language: str = ""
     extension: str = ""
-    keywords: List[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
     additional_params: str = ""
     max_pages: int = DEFAULT_MAX_PAGES
     per_page: int = DEFAULT_PER_PAGE
-    
+
     @property
     def full_query(self) -> str:
         """Build the complete search query string."""
@@ -76,10 +77,10 @@ class SearchConfig:
 @dataclass
 class SemgrepConfig:
     """Configuration for Semgrep analysis."""
-    
+
     enabled: bool = False
     args: str = ""
-    rules_path: Optional[str] = None
-    clone_dir: Optional[str] = None
+    rules_path: str | None = None
+    clone_dir: str | None = None
     keep_cloned: bool = False
     use_pro: bool = False
