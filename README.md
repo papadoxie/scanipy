@@ -3,22 +3,32 @@ A tool to scan open source code-bases for simple patterns
 
 ## Development Setup
 
-After cloning the repository, install the git hooks to ensure tests pass before each commit:
+After cloning the repository, run:
 
 ```bash
-./scripts/setup-hooks.sh
+make dev
 ```
 
-This will install a pre-commit hook that runs all tests before allowing a commit.
+This will:
+- Install dependencies
+- Install git hooks (pre-commit testing)
 
 ## Running Tests
 
 ```bash
-python -m pytest tests/
+make test
 ```
 
 With coverage:
 
 ```bash
-python -m pytest tests/ --cov=. --cov-report=term-missing
+make coverage
+```
+
+## Manual Hook Installation
+
+If not using `make`, you can install hooks manually:
+
+```bash
+./scripts/setup-hooks.sh
 ```
