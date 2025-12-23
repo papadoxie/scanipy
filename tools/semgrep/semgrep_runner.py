@@ -19,7 +19,7 @@ def _check_command_exists(cmd: str) -> bool:
         return False
 
 
-def _clone_repository(repo_url: str, clone_path: str, colors) -> bool:
+def _clone_repository(repo_url: str, clone_path: str, colors: Any) -> bool:
     """Clone *repo_url* into *clone_path* and return True on success."""
     try:
         subprocess.run(
@@ -33,7 +33,7 @@ def _clone_repository(repo_url: str, clone_path: str, colors) -> bool:
 
 def _run_semgrep(
     repo_path: str,
-    colors,
+    colors: Any,
     semgrep_args: str = "",
     rules_path: str | None = None,
     use_pro: bool = False,
@@ -60,7 +60,7 @@ def _run_semgrep(
 
 def analyze_repositories_with_semgrep(
     repo_list: Iterable[dict[str, Any]],
-    colors,
+    colors: Any,
     semgrep_args: str = "",
     clone_dir: str | None = None,
     keep_cloned: bool = False,
@@ -80,12 +80,18 @@ def analyze_repositories_with_semgrep(
         return []
 
     using_temp_dir = clone_dir is None
+    actual_clone_dir: str
     if using_temp_dir:
-        clone_dir = tempfile.mkdtemp(prefix="scanipy_repos_")
-        print(f"{colors.INFO}📁 Created temporary directory for cloning: {clone_dir}{colors.RESET}")
+        actual_clone_dir = tempfile.mkdtemp(prefix="scanipy_repos_")
+        print(
+            f"{colors.INFO}📁 Created temporary directory "
+            f"for cloning: {actual_clone_dir}{colors.RESET}"
+        )
     else:
-        Path(clone_dir).mkdir(parents=True, exist_ok=True)
-        print(f"{colors.INFO}📁 Using directory for cloning: {clone_dir}{colors.RESET}")
+        assert clone_dir is not None  # for type checker
+        actual_clone_dir = clone_dir
+        Path(actual_clone_dir).mkdir(parents=True, exist_ok=True)
+        print(f"{colors.INFO}📁 Using directory for cloning: {actual_clone_dir}{colors.RESET}")
 
     repos_to_analyze = list(repo_list)[:10]
 
@@ -108,7 +114,7 @@ def analyze_repositories_with_semgrep(
             continue
 
         repo_name = repo.get("name", f"repo_{index}")
-        clone_path = str(Path(clone_dir) / repo_name.replace("/", "_"))
+        clone_path = str(Path(actual_clone_dir) / repo_name.replace("/", "_"))
 
         print(
             f"\n{colors.INFO}[{index}/{len(repos_to_analyze)}] Analyzing "
@@ -141,12 +147,12 @@ def analyze_repositories_with_semgrep(
     if using_temp_dir and not keep_cloned:
         print(f"{colors.INFO}🧹 Cleaning up temporary directory...{colors.RESET}")
         try:
-            shutil.rmtree(clone_dir)
+            shutil.rmtree(actual_clone_dir)
             print(f"{colors.SUCCESS}✅ Cleanup successful{colors.RESET}")
         except Exception as exc:
             print(f"{colors.ERROR}❌ Failed to clean up: {exc}{colors.RESET}")
     elif keep_cloned:
-        print(f"{colors.INFO}💾 Repositories have been kept at: {clone_dir}{colors.RESET}")
+        print(f"{colors.INFO}💾 Repositories have been kept at: {actual_clone_dir}{colors.RESET}")
 
     print(f"\n{colors.HEADER}{'─' * 80}{colors.RESET}")
     print(f"{colors.INFO}📊 semrep Analysis Summary:{colors.RESET}")

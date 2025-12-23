@@ -390,7 +390,7 @@ def parse_keywords(keywords_str: str) -> list[str]:
 
 def build_configs_from_args(
     args: argparse.Namespace,
-) -> tuple[SearchConfig, SemgrepConfig, str, SearchStrategy, SortOrder]:
+) -> tuple[SearchConfig, SemgrepConfig, str | None, SearchStrategy, SortOrder]:
     """
     Build configuration objects from parsed arguments.
 

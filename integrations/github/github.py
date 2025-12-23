@@ -108,7 +108,7 @@ class BaseGitHubClient(ABC):
         method: str,
         url: str,
         max_retries: int = MAX_RETRIES,
-        **kwargs,
+        **kwargs: Any,
     ) -> requests.Response:
         """
         Make an HTTP request with retry logic for transient failures.
@@ -626,7 +626,7 @@ class RestAPI(BaseGitHubClient):
                 timeout=CONTENT_FETCH_TIMEOUT,
             )
             if response.status_code == 200:
-                return response.text
+                return str(response.text)
             return None
         except requests.RequestException as exc:
             print(f"{Colors.WARNING}⚠️  Could not fetch content: {exc}{Colors.RESET}")
@@ -785,7 +785,8 @@ class GraphQLAPI(BaseGitHubClient):
         if response.status_code != 200:
             raise GitHubAPIError(f"GraphQL API request failed with status {response.status_code}")
 
-        return response.json()
+        result: dict[str, Any] = response.json()
+        return result
 
     def _build_graphql_query(self, repo_names: list[str]) -> str:
         """Build a GraphQL query for multiple repositories."""
