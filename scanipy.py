@@ -1,114 +1,192 @@
 #!/usr/bin/env python3
+"""
+Scanipy - A tool to scan open source code-bases for security patterns.
+
+This module provides the CLI interface for searching GitHub repositories
+and running Semgrep analysis on discovered code.
+"""
+
+from __future__ import annotations
+
+import argparse
 import os
 import sys
-import argparse
-from colorama import init, Fore, Back, Style
+from typing import Any, Dict, List
 
+from colorama import init
+from dotenv import load_dotenv
+
+from integrations.github import search_repositories, SearchStrategy, SortOrder
+
+# Load environment variables from .env file
+load_dotenv()
+from models import (
+    Colors,
+    SearchConfig,
+    SemgrepConfig,
+    DEFAULT_MAX_PAGES,
+    DEFAULT_OUTPUT_FILE,
+    MAX_DISPLAY_REPOS,
+    MAX_FILES_PREVIEW,
+)
 from tools.semgrep.semgrep_runner import analyze_repositories_with_semgrep
 
 # Initialize colorama for cross-platform color support
 init(autoreset=True)
 
-# Color and styling utilities
-class Colors:
-    HEADER = Fore.CYAN + Style.BRIGHT
-    SUCCESS = Fore.GREEN + Style.BRIGHT
-    WARNING = Fore.YELLOW + Style.BRIGHT
-    ERROR = Fore.RED + Style.BRIGHT
-    INFO = Fore.BLUE + Style.BRIGHT
-    PROGRESS = Fore.CYAN
-    REPO_NAME = Fore.MAGENTA + Style.BRIGHT
-    STARS = Fore.YELLOW + Style.BRIGHT
-    FILES = Fore.GREEN
-    URL = Fore.BLUE + Style.DIM
-    DESCRIPTION = Fore.WHITE + Style.DIM
-    RESET = Style.RESET_ALL
+# =============================================================================
+# Display Functions
+# =============================================================================
 
-def print_banner():
-    """Print a colorful banner for the tool"""
-    banner = f"""
+class Display:
+    """Handles all terminal output and formatting."""
+    
+    @staticmethod
+    def print_banner() -> None:
+        """Print a colorful banner for the tool."""
+        banner = f"""
 {Colors.HEADER}╔══════════════════════════════════════════════════════════════╗
 ║                          📡 SCANIPY                          ║
 ║              Code Pattern Scanner for GitHub                 ║
 ╚══════════════════════════════════════════════════════════════╝{Colors.RESET}
 """
-    print(banner)
+        print(banner)
 
-def print_search_info(query, language, extension, pages, keywords=None):
-    """Print search parameters in a formatted way"""
-    print(f"{Colors.INFO}🔍 Search Parameters:{Colors.RESET}")
-    print(f"   {Colors.INFO}•{Colors.RESET} Query: {Colors.WARNING}'{query}'{Colors.RESET}")
-    if language:
-        print(f"   {Colors.INFO}•{Colors.RESET} Language: {Colors.SUCCESS}{language}{Colors.RESET}")
-    if extension:
-        print(f"   {Colors.INFO}•{Colors.RESET} Extension: {Colors.SUCCESS}{extension}{Colors.RESET}")
-    if keywords:
-        print(f"   {Colors.INFO}•{Colors.RESET} Keywords: {Colors.WARNING}{', '.join(keywords)}{Colors.RESET}")
-    print(f"   {Colors.INFO}•{Colors.RESET} Max Pages: {Colors.WARNING}{pages}{Colors.RESET}")
-    print()
+    @staticmethod
+    def print_search_info(
+        config: SearchConfig,
+        strategy: SearchStrategy | None = None,
+        sort_order: SortOrder | None = None,
+    ) -> None:
+        """Print search parameters in a formatted way."""
+        print(f"{Colors.INFO}🔍 Search Parameters:{Colors.RESET}")
+        print(f"   {Colors.INFO}•{Colors.RESET} Query: {Colors.WARNING}'{config.query}'{Colors.RESET}")
+        if config.language:
+            print(f"   {Colors.INFO}•{Colors.RESET} Language: {Colors.SUCCESS}{config.language}{Colors.RESET}")
+        if config.extension:
+            print(f"   {Colors.INFO}•{Colors.RESET} Extension: {Colors.SUCCESS}{config.extension}{Colors.RESET}")
+        if config.keywords:
+            print(f"   {Colors.INFO}•{Colors.RESET} Keywords: {Colors.WARNING}{', '.join(config.keywords)}{Colors.RESET}")
+        print(f"   {Colors.INFO}•{Colors.RESET} Max Pages: {Colors.WARNING}{config.max_pages}{Colors.RESET}")
+        if strategy:
+            strategy_desc = "tiered by stars" if strategy == SearchStrategy.TIERED_STARS else "greedy"
+            print(f"   {Colors.INFO}•{Colors.RESET} Strategy: {Colors.SUCCESS}{strategy_desc}{Colors.RESET}")
+        if sort_order:
+            sort_desc = "most stars" if sort_order == SortOrder.STARS else "recently updated"
+            print(f"   {Colors.INFO}•{Colors.RESET} Sort by: {Colors.SUCCESS}{sort_desc}{Colors.RESET}")
+        print()
 
-def format_star_count(stars):
-    """Format star count with appropriate color and formatting"""
-    if stars == 'N/A':
-        return f"{Colors.WARNING}N/A{Colors.RESET}"
-    elif stars >= 10000:
-        return f"{Colors.SUCCESS}⭐ {stars:,}{Colors.RESET}"
-    elif stars >= 1000:
-        return f"{Colors.STARS}⭐ {stars:,}{Colors.RESET}"
-    else:
-        return f"{Colors.WARNING}⭐ {stars}{Colors.RESET}"
+    @staticmethod
+    def format_star_count(stars: int | str) -> str:
+        """Format star count with appropriate color and formatting."""
+        if stars == "N/A" or not isinstance(stars, int):
+            return f"{Colors.WARNING}N/A{Colors.RESET}"
+        elif stars >= 10000:
+            return f"{Colors.SUCCESS}⭐ {stars:,}{Colors.RESET}"
+        elif stars >= 1000:
+            return f"{Colors.STARS}⭐ {stars:,}{Colors.RESET}"
+        else:
+            return f"{Colors.WARNING}⭐ {stars}{Colors.RESET}"
 
-def print_repository(index, repo, query):
-    """Print a single repository with colorful formatting"""
-    # Repository header
-    print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
-    print(f"{Colors.INFO}{index:2d}.{Colors.RESET} {Colors.REPO_NAME}{repo['name']}{Colors.RESET} {format_star_count(repo.get('stars', 'N/A'))}")
-    
-    # Description
-    if repo.get('description'):
-        desc = repo['description']
-        if len(desc) > 100:
-            desc = desc[:97] + "..."
-        print(f"    {Colors.DESCRIPTION}📝 {desc}{Colors.RESET}")
-    
-    # File count
-    file_count = len(repo['files'])
-    if file_count > 0:
-        print(f"    {Colors.FILES}📁 {file_count} file{'s' if file_count != 1 else ''} containing '{query}'{Colors.RESET}")
+    @staticmethod
+    def format_updated_at(updated_at: str) -> str:
+        """Format the updated_at timestamp for display."""
+        if not updated_at:
+            return ""
+        # ISO format: 2024-12-23T10:30:00Z -> 2024-12-23
+        try:
+            date_part = updated_at.split("T")[0]
+            return f"{Colors.INFO}🕐 Updated: {date_part}{Colors.RESET}"
+        except (IndexError, AttributeError):
+            return ""
+
+    @staticmethod
+    def print_repository(index: int, repo: Dict[str, Any], query: str, sort_order: SortOrder | None = None) -> None:
+        """Print a single repository with colorful formatting."""
+        # Repository header
+        print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
+        print(
+            f"{Colors.INFO}{index:2d}.{Colors.RESET} "
+            f"{Colors.REPO_NAME}{repo['name']}{Colors.RESET} "
+            f"{Display.format_star_count(repo.get('stars', 'N/A'))}"
+        )
         
-        # Show files with keyword information
-        for i, file in enumerate(repo['files'][:3]):
+        # Show updated date if sorting by updated
+        if sort_order == SortOrder.UPDATED and repo.get("updated_at"):
+            print(f"    {Display.format_updated_at(repo['updated_at'])}")
+        
+        # Description
+        if repo.get("description"):
+            desc = repo["description"]
+            if len(desc) > 100:
+                desc = desc[:97] + "..."
+            print(f"    {Colors.DESCRIPTION}📝 {desc}{Colors.RESET}")
+        
+        # File count
+        file_count = len(repo["files"])
+        if file_count > 0:
+            plural = "s" if file_count != 1 else ""
+            print(f"    {Colors.FILES}📁 {file_count} file{plural} containing '{query}'{Colors.RESET}")
+            
+            # Show files with keyword information
+            Display._print_file_list(repo["files"])
+        
+        # URL
+        if repo.get("url"):
+            print(f"    {Colors.URL}🔗 {repo['url']}{Colors.RESET}")
+        
+        print()
+
+    @staticmethod
+    def _print_file_list(files: List[Dict[str, Any]]) -> None:
+        """Print the list of files with keyword match information."""
+        for file in files[:MAX_FILES_PREVIEW]:
             file_line = f"    {Colors.FILES}├─{Colors.RESET} {file['path']}"
             
-            # Add keyword match information
-            if file.get('keyword_match') is True:
-                keywords_str = ', '.join(file.get('keywords_found', []))
+            # Add keyword match information (only if keywords were searched)
+            keyword_match = file.get("keyword_match")
+            if keyword_match is True:
+                keywords_str = ", ".join(file.get("keywords_found", []))
                 file_line += f" {Colors.SUCCESS}[Keywords: {keywords_str}]{Colors.RESET}"
-            elif file.get('keyword_match') is False:
-                file_line += f" {Colors.WARNING}[No keywords found]{Colors.RESET}"
-            elif file.get('keyword_match') is None:
-                file_line += f" {Colors.WARNING}[Content unavailable]{Colors.RESET}"
+            elif keyword_match is False:
+                file_line += f" {Colors.WARNING}[No keywords matched]{Colors.RESET}"
+            # keyword_match is None means keywords weren't searched - don't show anything
             
             print(file_line)
         
-        if len(repo['files']) > 3:
-            remaining = len(repo['files']) - 3
-            print(f"    {Colors.FILES}└─{Colors.RESET} {Colors.WARNING}... and {remaining} more file{'s' if remaining != 1 else ''}{Colors.RESET}")
-    
-    # URL
-    if repo.get('url'):
-        print(f"    {Colors.URL}🔗 {repo['url']}{Colors.RESET}")
-    
-    print()
+        if len(files) > MAX_FILES_PREVIEW:
+            remaining = len(files) - MAX_FILES_PREVIEW
+            plural = "s" if remaining != 1 else ""
+            print(f"    {Colors.FILES}└─{Colors.RESET} {Colors.WARNING}... and {remaining} more file{plural}{Colors.RESET}")
 
-def setup_argparser():
-    parser = argparse.ArgumentParser(
-    description='Search for open source repositories containing specific code patterns and sort by stars.',
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-    epilog='''
+    @staticmethod
+    def print_results(repos: List[Dict[str, Any]], query: str, sort_order: SortOrder | None = None) -> None:
+        """Print the list of repositories."""
+        if not repos:
+            print(f"{Colors.WARNING}📭 No repositories found matching your criteria.{Colors.RESET}")
+            return
+        
+        if sort_order == SortOrder.UPDATED:
+            print(f"{Colors.SUCCESS}🎯 TOP REPOSITORIES BY RECENTLY UPDATED:{Colors.RESET}")
+        else:
+            print(f"{Colors.SUCCESS}🎯 TOP REPOSITORIES BY STARS:{Colors.RESET}")
+        for i, repo in enumerate(repos[:MAX_DISPLAY_REPOS], 1):
+            Display.print_repository(i, repo, query, sort_order)
+
+    @staticmethod
+    def print_no_results_hint(has_keywords: bool) -> None:
+        """Print helpful hints when no results are found."""
+        if has_keywords:
+            print(f"{Colors.INFO}💡 Try with fewer or different keywords, or search without keyword filtering.{Colors.RESET}")
+
+# =============================================================================
+# CLI Argument Parsing
+# =============================================================================
+
+EPILOG = """
 Examples:
 
-    # Search for a pattern
+    # Search for a pattern (uses tiered star search by default)
     scanipy --query "extractall"
     
     # Search for a specific language
@@ -120,176 +198,253 @@ Examples:
     # Search with a higher page limit 
     scanipy --query "pickle.loads" --pages 10
   
+    # Use greedy search (faster but may miss high-star repos)
+    scanipy --query "extractall" --search-strategy greedy
+    
     # Search in specific file types
     scanipy --query "os.system" --language python --extension ".py"
   
     # Search with additional filters
     scanipy --query "subprocess.call" --additional-params "stars:>100"
     
-    # Run semrep on top repositories
-    scanipy --query "extractall" --run-semrep
-    '''
+    # Run Semgrep on top repositories
+    scanipy --query "extractall" --run-semgrep
+    
+    # Run Semgrep with custom rules
+    scanipy --query "extractall" --run-semgrep --rules ./my_rules.yaml
+"""
+
+
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser."""
+    parser = argparse.ArgumentParser(
+        description="Search for open source repositories containing specific code patterns and sort by stars.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
     )
 
     # Search query parameters
-    parser.add_argument(
-        '--query', '-q',
+    search_group = parser.add_argument_group("Search Options")
+    search_group.add_argument(
+        "--query", "-q",
         required=True,
-        help='Code pattern to search for (e.g., "extractall")'
+        help='Code pattern to search for (e.g., "extractall")',
     )
-    parser.add_argument(
-        '--language', '-l',
-        default='',
-        help='Programming language to search in (e.g., python)'
+    search_group.add_argument(
+        "--language", "-l",
+        default="",
+        help="Programming language to search in (e.g., python)",
     )
-    parser.add_argument(
-        '--extension', '-e',
-        default='',
-        help='File extension to search in (e.g., ".py", ".ipynb")'
+    search_group.add_argument(
+        "--extension", "-e",
+        default="",
+        help='File extension to search in (e.g., ".py", ".ipynb")',
     )
-    parser.add_argument(
-        '--keywords', '-k',
-        default='',
-        help='Comma-separated keywords to look for in files containing the main pattern (e.g., "path,directory,zip")'
+    search_group.add_argument(
+        "--keywords", "-k",
+        default="",
+        help='Comma-separated keywords to look for in files (e.g., "path,directory,zip")',
     )
-    parser.add_argument(
-        '--additional-params',
-        default='',
-        help='Additional search parameters (e.g., "stars:>100 -org:microsoft")'
+    search_group.add_argument(
+        "--additional-params",
+        default="",
+        help='Additional search parameters (e.g., "stars:>100 -org:microsoft")',
     )
-    # Pagination and limits
-    parser.add_argument(
-        '--pages', '-p',
+    search_group.add_argument(
+        "--pages", "-p",
         type=int,
-        default=5,
-        help='Maximum number of pages to retrieve (default: 5, max 10 pages = 1000 results)'
+        default=DEFAULT_MAX_PAGES,
+        help=f"Maximum number of pages to retrieve (default: {DEFAULT_MAX_PAGES}, max 10 pages = 1000 results)",
     )
+    search_group.add_argument(
+        "--search-strategy", "-s",
+        choices=["tiered", "greedy"],
+        default="tiered",
+        help="Search strategy: 'tiered' searches by star ranges (10k+, 1k-10k, etc.) to prioritize popular repos; 'greedy' is faster but may miss high-star repos (default: tiered)",
+    )
+    search_group.add_argument(
+        "--sort-by",
+        choices=["stars", "updated"],
+        default="stars",
+        help="Sort results by: 'stars' (most starred first) or 'updated' (most recently updated first) (default: stars)",
+    )
+
     # GitHub API authentication
-    parser.add_argument(
-        '--github-token',
-        help='GitHub personal access token (also can be set via GITHUB_TOKEN env variable)'
+    auth_group = parser.add_argument_group("Authentication")
+    auth_group.add_argument(
+        "--github-token",
+        help="GitHub personal access token (also can be set via GITHUB_TOKEN env variable)",
     )
+
     # Output options
-    parser.add_argument(
-        '--output', '-o',
-        default='repos.json',
-        help='Output JSON file path (default: repos.json)'
+    output_group = parser.add_argument_group("Output Options")
+    output_group.add_argument(
+        "--output", "-o",
+        default=DEFAULT_OUTPUT_FILE,
+        help=f"Output JSON file path (default: {DEFAULT_OUTPUT_FILE})",
     )
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose output'
+    output_group.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output",
     )
-    # New semrep options
-    parser.add_argument(
-        '--run-semrep',
-        action='store_true',
-        help='Run semrep analysis on the top 10 repositories'
+
+    # Semgrep options
+    semgrep_group = parser.add_argument_group("Semgrep Analysis")
+    semgrep_group.add_argument(
+        "--run-semgrep",
+        action="store_true",
+        help="Run Semgrep analysis on the top 10 repositories",
     )
-    parser.add_argument(
-        '--semrep-args',
-        default='',
-        help='Additional arguments to pass to semrep (e.g., "--json --verbose"). Quote the arguments as a single string.'
+    semgrep_group.add_argument(
+        "--semgrep-args",
+        default="",
+        help='Additional arguments to pass to Semgrep (e.g., "--json --verbose")',
     )
-    parser.add_argument(
-        '--pro',
-        action='store_true',
-        help='Use semgrep with the --pro flag'
+    semgrep_group.add_argument(
+        "--pro",
+        action="store_true",
+        help="Use Semgrep with the --pro flag",
     )
-    parser.add_argument(
-        '--rules',
+    semgrep_group.add_argument(
+        "--rules",
         default=None,
-        help='Path to custom semgrep rules file or directory (YAML format)'
+        help="Path to custom Semgrep rules file or directory (YAML format)",
     )
-    parser.add_argument(
-        '--clone-dir',
+    semgrep_group.add_argument(
+        "--clone-dir",
         default=None,
-        help='Directory to clone repositories into (default: temporary directory)'
+        help="Directory to clone repositories into (default: temporary directory)",
     )
-    parser.add_argument(
-        '--keep-cloned',
-        action='store_true',
-        help='Keep cloned repositories after analysis (only applicable with --clone-dir)'
+    semgrep_group.add_argument(
+        "--keep-cloned",
+        action="store_true",
+        help="Keep cloned repositories after analysis",
+    )
+
+    return parser
+
+
+def parse_keywords(keywords_str: str) -> List[str]:
+    """Parse comma-separated keywords string into a list."""
+    if not keywords_str:
+        return []
+    return [kw.strip() for kw in keywords_str.split(",") if kw.strip()]
+
+
+def build_configs_from_args(args: argparse.Namespace) -> tuple[SearchConfig, SemgrepConfig, str, SearchStrategy, SortOrder]:
+    """
+    Build configuration objects from parsed arguments.
+    
+    Returns:
+        Tuple of (SearchConfig, SemgrepConfig, github_token, search_strategy, sort_order)
+    """
+    search_config = SearchConfig(
+        query=args.query,
+        language=args.language,
+        extension=args.extension,
+        keywords=parse_keywords(args.keywords),
+        additional_params=args.additional_params,
+        max_pages=args.pages,
     )
     
+    semgrep_config = SemgrepConfig(
+        enabled=args.run_semgrep,
+        args=args.semgrep_args,
+        rules_path=args.rules,
+        clone_dir=args.clone_dir,
+        keep_cloned=args.keep_cloned,
+        use_pro=args.pro,
+    )
+    
+    # Resolve GitHub token
+    github_token = args.github_token or os.getenv("GITHUB_TOKEN")
+    
+    # Resolve search strategy
+    strategy_map = {
+        "tiered": SearchStrategy.TIERED_STARS,
+        "greedy": SearchStrategy.GREEDY,
+    }
+    search_strategy = strategy_map[args.search_strategy]
+    
+    # Resolve sort order
+    sort_map = {
+        "stars": SortOrder.STARS,
+        "updated": SortOrder.UPDATED,
+    }
+    sort_order = sort_map[args.sort_by]
+    
+    return search_config, semgrep_config, github_token, search_strategy, sort_order
+
+
+# =============================================================================
+# Core Application Logic
+# =============================================================================
+
+def run_semgrep_analysis(
+    repos: List[Dict[str, Any]],
+    config: SemgrepConfig,
+) -> None:
+    """
+    Run Semgrep analysis on the provided repositories.
+    
+    Args:
+        repos: List of repository dictionaries
+        config: Semgrep configuration
+    """
+    analyze_repositories_with_semgrep(
+        repo_list=repos,
+        colors=Colors,
+        semgrep_args=config.args,
+        clone_dir=config.clone_dir,
+        keep_cloned=config.keep_cloned,
+        rules_path=config.rules_path,
+        use_pro=config.use_pro,
+    )
+
+
+def main() -> int:
+    """
+    Main entry point for the scanipy CLI.
+    
+    Returns:
+        Exit code (0 for success, non-zero for errors)
+    """
+    parser = create_argument_parser()
     args = parser.parse_args()
     
-    # Parse keywords
-    if args.keywords:
-        args.keywords_list = [kw.strip() for kw in args.keywords.split(',') if kw.strip()]
+    # Build configuration objects
+    search_config, semgrep_config, github_token, search_strategy, sort_order = build_configs_from_args(args)
+    
+    # Validate GitHub token
+    if not github_token:
+        print(
+            f"{Colors.ERROR}❌ Error: GITHUB_TOKEN environment variable "
+            f"or --github-token argument must be set.{Colors.RESET}"
+        )
+        return 1
+    
+    # Display banner and search info
+    Display.print_banner()
+    Display.print_search_info(search_config, strategy=search_strategy, sort_order=sort_order)
+    
+    # Perform GitHub search
+    repos = search_repositories(search_config, github_token, strategy=search_strategy, sort_order=sort_order)
+    
+    # Display results
+    if repos:
+        Display.print_results(repos, search_config.query, sort_order=sort_order)
+        
+        # Run Semgrep analysis if requested
+        if semgrep_config.enabled:
+            run_semgrep_analysis(repos, semgrep_config)
     else:
-        args.keywords_list = []
+        Display.print_results(repos, search_config.query, sort_order=sort_order)
+        Display.print_no_results_hint(bool(search_config.keywords))
     
-    # Build the complete search query
-    query_parts = []
-    if args.query:
-        query_parts.append(args.query)
-    if args.language:
-        query_parts.append(f"language:{args.language}")
-    if args.extension:
-        query_parts.append(f"extension:{args.extension}")
-    if args.additional_params:
-        query_parts.append(args.additional_params)
-    args.full_query = " ".join(query_parts)
-    
-    return args
+    return 0
 
 
 if __name__ == "__main__":
-    args = setup_argparser()
-    
-    # Check if GITHUB_TOKEN is set in environment variables
-    if not args.github_token:
-        args.github_token = os.getenv("GITHUB_TOKEN")
-    
-    if not args.github_token:
-        print(f"{Colors.ERROR}❌ Error: GITHUB_TOKEN environment variable or --github-token argument must be set.{Colors.RESET}")
-        sys.exit(1)
-    
-    print_banner()
-    
-    # Print search information
-    print_search_info(args.query, args.language, args.extension, args.pages, args.keywords_list)
-    
-    # Initialize GitHub API client
-    from integrations.github.github import RestAPI as GHRest
-    from integrations.github.github import GraphQLAPI as GHGraphQL
-    ghrest = GHRest(token=args.github_token)
-    ghrest.search(args.query, language=args.language, extension=args.extension, per_page=100, max_pages=args.pages, additional_params=args.additional_params)
-    repos = ghrest.repositories
-    
-    # Apply keyword filtering if keywords are provided
-    if args.keywords_list:
-        ghrest.filter_by_keywords(args.keywords_list)
-        repos = ghrest.repositories
-    
-    ghgraphql = GHGraphQL(token=args.github_token, repositories=repos)
-    ghgraphql.batch_query()
-    
-    repos = ghgraphql.repositories
-    
-    repo_list = list(repos.values())
-    repo_list.sort(key=lambda x: x.get("stars", 0), reverse=True)
-    
-    # Print top repositories
-    if repo_list:
-        print(f"{Colors.SUCCESS}🎯 TOP REPOSITORIES BY STARS:{Colors.RESET}")
-        for i, repo in enumerate(repo_list[:20], 1):
-            print_repository(i, repo, args.query)
-        
-        # Run semrep on top repositories if requested
-        if args.run_semrep:
-            analyze_repositories_with_semrep(
-                repo_list,
-                Colors,
-                semgrep_args=args.semrep_args,
-                clone_dir=args.clone_dir,
-                keep_cloned=args.keep_cloned,
-                rules_path=args.rules,
-                use_pro=args.pro,
-            )
-    else:
-        print(f"{Colors.WARNING}📭 No repositories found matching your criteria.{Colors.RESET}")
-        if args.keywords_list:
-            print(f"{Colors.INFO}💡 Try with fewer or different keywords, or search without keyword filtering.{Colors.RESET}")
+    sys.exit(main())
 
