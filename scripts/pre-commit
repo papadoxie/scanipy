@@ -1,5 +1,28 @@
 #!/bin/bash
 
+echo "Running linter checks before commit..."
+
+# Run ruff linter
+ruff check .
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: Linting failed!"
+    echo "Run 'ruff check --fix .' to auto-fix issues, or fix them manually."
+    exit 1
+fi
+echo "✅ Linting passed!"
+
+# Check formatting
+ruff format --check .
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: Formatting issues found!"
+    echo "Run 'ruff format .' to fix formatting."
+    exit 1
+fi
+echo "✅ Formatting check passed!"
+
+echo ""
 echo "Running tests before commit..."
 
 # Run pytest and capture the exit code
@@ -14,4 +37,5 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "✅ All tests passed!"
+echo "✅ All pre-commit checks passed!"
 exit 0
