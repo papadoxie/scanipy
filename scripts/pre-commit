@@ -1,0 +1,17 @@
+#!/bin/bash
+
+echo "Running tests before commit..."
+
+# Run pytest and capture the exit code
+python -m pytest tests/ -q
+
+# Check if tests passed
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: Tests failed!"
+    echo "Please fix the failing tests before committing."
+    exit 1
+fi
+
+echo "✅ All tests passed!"
+exit 0
