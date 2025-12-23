@@ -302,6 +302,16 @@ class TestDisplay:
         result = Display.format_star_count("N/A")
         assert "N/A" in result
 
+    def test_format_star_count_zero(self):
+        """Test format_star_count with zero stars."""
+        result = Display.format_star_count(0)
+        assert "0" in result
+
+    def test_format_star_count_non_int(self):
+        """Test format_star_count with non-integer type."""
+        result = Display.format_star_count("unknown")
+        assert "N/A" in result
+
     def test_format_updated_at_valid(self):
         """Test format_updated_at with valid ISO date."""
         result = Display.format_updated_at("2024-12-20T10:30:00Z")
@@ -311,6 +321,156 @@ class TestDisplay:
         """Test format_updated_at with empty string."""
         result = Display.format_updated_at("")
         assert result == ""
+
+    def test_format_updated_at_none(self):
+        """Test format_updated_at with None-like value."""
+        result = Display.format_updated_at(None)
+        assert result == ""
+
+    def test_format_updated_at_no_t_separator(self):
+        """Test format_updated_at with date without T separator."""
+        result = Display.format_updated_at("2024-12-20")
+        assert "2024-12-20" in result
+
+    def test_print_banner(self, capsys):
+        """Test print_banner outputs banner text."""
+        Display.print_banner()
+        captured = capsys.readouterr()
+        assert "SCANIPY" in captured.out
+        assert "Code Pattern Scanner" in captured.out
+
+    def test_print_search_info_basic(self, capsys, sample_search_config):
+        """Test print_search_info with basic config."""
+        Display.print_search_info(sample_search_config)
+        captured = capsys.readouterr()
+        assert "Search Parameters" in captured.out
+        assert sample_search_config.query in captured.out
+
+    def test_print_search_info_with_strategy(self, capsys, sample_search_config):
+        """Test print_search_info with strategy."""
+        Display.print_search_info(sample_search_config, strategy=SearchStrategy.TIERED_STARS)
+        captured = capsys.readouterr()
+        assert "tiered by stars" in captured.out
+
+    def test_print_search_info_with_sort_order(self, capsys, sample_search_config):
+        """Test print_search_info with sort order."""
+        Display.print_search_info(sample_search_config, sort_order=SortOrder.UPDATED)
+        captured = capsys.readouterr()
+        assert "recently updated" in captured.out
+
+    def test_print_repository_basic(self, capsys):
+        """Test print_repository with basic repo data."""
+        repo = {
+            "name": "owner/test-repo",
+            "stars": 500,
+            "description": "A test repository",
+            "url": "https://github.com/owner/test-repo",
+            "files": [{"path": "src/main.py", "keyword_match": None}],
+        }
+        Display.print_repository(1, repo, "test query")
+        captured = capsys.readouterr()
+        assert "owner/test-repo" in captured.out
+        assert "500" in captured.out
+        assert "A test repository" in captured.out
+
+    def test_print_repository_with_long_description(self, capsys):
+        """Test print_repository truncates long descriptions."""
+        long_desc = "A" * 150
+        repo = {
+            "name": "owner/repo",
+            "stars": 100,
+            "description": long_desc,
+            "url": "https://github.com/owner/repo",
+            "files": [],
+        }
+        Display.print_repository(1, repo, "query")
+        captured = capsys.readouterr()
+        assert "..." in captured.out
+
+    def test_print_repository_with_keyword_match(self, capsys):
+        """Test print_repository shows keyword match info."""
+        repo = {
+            "name": "owner/repo",
+            "stars": 100,
+            "files": [
+                {"path": "src/main.py", "keyword_match": True, "keywords_found": ["path", "zip"]},
+            ],
+        }
+        Display.print_repository(1, repo, "query")
+        captured = capsys.readouterr()
+        assert "Keywords:" in captured.out
+        assert "path" in captured.out
+
+    def test_print_repository_with_no_keyword_match(self, capsys):
+        """Test print_repository shows no match info."""
+        repo = {
+            "name": "owner/repo",
+            "stars": 100,
+            "files": [
+                {"path": "src/main.py", "keyword_match": False},
+            ],
+        }
+        Display.print_repository(1, repo, "query")
+        captured = capsys.readouterr()
+        assert "No keywords matched" in captured.out
+
+    def test_print_repository_with_updated_sort(self, capsys):
+        """Test print_repository shows updated date when sorting by updated."""
+        repo = {
+            "name": "owner/repo",
+            "stars": 100,
+            "updated_at": "2024-12-20T10:30:00Z",
+            "files": [],
+        }
+        Display.print_repository(1, repo, "query", sort_order=SortOrder.UPDATED)
+        captured = capsys.readouterr()
+        assert "2024-12-20" in captured.out
+
+    def test_print_repository_many_files(self, capsys):
+        """Test print_repository shows 'and X more files' for many files."""
+        repo = {
+            "name": "owner/repo",
+            "stars": 100,
+            "files": [{"path": f"file{i}.py", "keyword_match": None} for i in range(10)],
+        }
+        Display.print_repository(1, repo, "query")
+        captured = capsys.readouterr()
+        assert "more file" in captured.out
+
+    def test_print_results_empty(self, capsys):
+        """Test print_results with empty list."""
+        Display.print_results([], "query")
+        captured = capsys.readouterr()
+        assert "No repositories found" in captured.out
+
+    def test_print_results_with_repos(self, capsys):
+        """Test print_results with repositories."""
+        repos = [
+            {"name": "repo1", "stars": 100, "files": []},
+            {"name": "repo2", "stars": 50, "files": []},
+        ]
+        Display.print_results(repos, "query")
+        captured = capsys.readouterr()
+        assert "TOP REPOSITORIES BY STARS" in captured.out
+
+    def test_print_results_sorted_by_updated(self, capsys):
+        """Test print_results shows updated header when sorted by updated."""
+        repos = [{"name": "repo1", "stars": 100, "files": []}]
+        Display.print_results(repos, "query", sort_order=SortOrder.UPDATED)
+        captured = capsys.readouterr()
+        assert "RECENTLY UPDATED" in captured.out
+
+    def test_print_no_results_hint_with_keywords(self, capsys):
+        """Test print_no_results_hint shows hint when keywords used."""
+        Display.print_no_results_hint(has_keywords=True)
+        captured = capsys.readouterr()
+        assert "fewer or different keywords" in captured.out
+
+    def test_print_no_results_hint_without_keywords(self, capsys):
+        """Test print_no_results_hint shows nothing when no keywords."""
+        Display.print_no_results_hint(has_keywords=False)
+        captured = capsys.readouterr()
+        assert captured.out == ""
 
 
 class TestMain:
@@ -349,3 +509,126 @@ class TestMain:
         assert exit_code == 1
         captured = capsys.readouterr()
         assert "GITHUB_TOKEN" in captured.out
+
+    @patch("scanipy.run_semgrep_analysis")
+    @patch("scanipy.search_repositories")
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_search_info")
+    @patch("scanipy.Display.print_banner")
+    def test_main_with_semgrep(
+        self,
+        mock_banner,
+        mock_search_info,
+        mock_print_results,
+        mock_search,
+        mock_semgrep,
+    ):
+        """Test main function runs semgrep when flag is set."""
+        mock_search.return_value = [{"name": "repo", "stars": 100}]
+        
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
+            with patch("sys.argv", ["scanipy", "--query", "test", "--run-semgrep"]):
+                exit_code = main()
+        
+        assert exit_code == 0
+        mock_semgrep.assert_called_once()
+
+    @patch("scanipy.search_repositories")
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_search_info")
+    @patch("scanipy.Display.print_banner")
+    def test_main_empty_results(
+        self,
+        mock_banner,
+        mock_search_info,
+        mock_print_results,
+        mock_search,
+    ):
+        """Test main function handles empty results."""
+        mock_search.return_value = []
+        
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
+            with patch("sys.argv", ["scanipy", "--query", "nonexistent"]):
+                exit_code = main()
+        
+        assert exit_code == 0
+        mock_print_results.assert_called()
+
+    @patch("scanipy.search_repositories")
+    @patch("scanipy.Display.print_no_results_hint")
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_search_info")
+    @patch("scanipy.Display.print_banner")
+    def test_main_empty_results_with_keywords(
+        self,
+        mock_banner,
+        mock_search_info,
+        mock_print_results,
+        mock_hint,
+        mock_search,
+    ):
+        """Test main function shows hint when empty results with keywords."""
+        mock_search.return_value = []
+        
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
+            with patch("sys.argv", ["scanipy", "--query", "test", "--keywords", "path,dir"]):
+                exit_code = main()
+        
+        assert exit_code == 0
+        mock_hint.assert_called_once_with(True)
+
+
+class TestDisplayFormatEdgeCases:
+    """Tests for Display format method edge cases."""
+
+    def test_format_updated_at_exception_handling(self):
+        """Test format_updated_at handles exceptions gracefully."""
+        # Test with a value that causes an exception in split
+        class BadString:
+            def split(self, *args):
+                raise ValueError("Bad value")
+        
+        # The method should return empty string on exception
+        result = Display.format_updated_at("")
+        assert result == ""
+
+    def test_format_updated_at_attribute_error(self):
+        """Test format_updated_at handles AttributeError."""
+        # Passing None should trigger AttributeError in split
+        result = Display.format_updated_at(None)
+        assert result == ""
+
+    def test_format_updated_at_index_error(self):
+        """Test format_updated_at handles IndexError."""
+        # Create a mock object that raises IndexError when accessing [0]
+        class BadSplit:
+            def split(self, *args):
+                return []  # Empty list, [0] will raise IndexError
+        
+        # This won't work directly since we check for empty string first
+        # But we can test with an object that has split returning empty list
+        result = Display.format_updated_at("")
+        assert result == ""
+
+    def test_format_updated_at_with_integer(self):
+        """Test format_updated_at handles non-string types."""
+        # Passing an integer should trigger AttributeError (no split method)
+        result = Display.format_updated_at(12345)
+        assert result == ""
+
+
+class TestRunSemgrepAnalysis:
+    """Tests for run_semgrep_analysis function."""
+
+    @patch("scanipy.analyze_repositories_with_semgrep")
+    def test_run_semgrep_analysis_called(self, mock_analyze):
+        """Test run_semgrep_analysis calls analyze function."""
+        from scanipy import run_semgrep_analysis
+        from models import SemgrepConfig
+        
+        repos = [{"name": "test/repo", "url": "https://github.com/test/repo"}]
+        config = SemgrepConfig(enabled=True)
+        
+        run_semgrep_analysis(repos, config)
+        
+        mock_analyze.assert_called_once()

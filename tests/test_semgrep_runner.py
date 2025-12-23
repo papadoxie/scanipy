@@ -354,3 +354,115 @@ class TestAnalyzeRepositoriesWithSemgrep:
         results = analyze_repositories_with_semgrep(repos, mock_colors)
         
         assert len(results) == 0
+
+    @patch("tools.semgrep.semgrep_runner.shutil.rmtree")
+    @patch("tools.semgrep.semgrep_runner.tempfile.mkdtemp")
+    @patch("tools.semgrep.semgrep_runner._run_semgrep")
+    @patch("tools.semgrep.semgrep_runner._clone_repository")
+    @patch("tools.semgrep.semgrep_runner._check_command_exists")
+    def test_semgrep_analysis_failure(
+        self,
+        mock_check,
+        mock_clone,
+        mock_semgrep,
+        mock_mkdtemp,
+        mock_rmtree,
+        mock_colors,
+    ):
+        """Test handles semgrep analysis failure."""
+        mock_check.return_value = True
+        mock_clone.return_value = True
+        mock_semgrep.return_value = (False, "Semgrep error occurred")
+        mock_mkdtemp.return_value = "/tmp/test"
+        
+        repos = [{"url": "https://github.com/owner/repo", "name": "owner/repo"}]
+        
+        results = analyze_repositories_with_semgrep(repos, mock_colors)
+        
+        assert len(results) == 1
+        assert results[0]["success"] is False
+        assert "Semgrep error" in results[0]["output"]
+
+    @patch("tools.semgrep.semgrep_runner.shutil.rmtree")
+    @patch("tools.semgrep.semgrep_runner.tempfile.mkdtemp")
+    @patch("tools.semgrep.semgrep_runner._run_semgrep")
+    @patch("tools.semgrep.semgrep_runner._clone_repository")
+    @patch("tools.semgrep.semgrep_runner._check_command_exists")
+    def test_cleanup_exception_handling(
+        self,
+        mock_check,
+        mock_clone,
+        mock_semgrep,
+        mock_mkdtemp,
+        mock_rmtree,
+        mock_colors,
+    ):
+        """Test handles exception during cleanup."""
+        mock_check.return_value = True
+        mock_clone.return_value = True
+        mock_semgrep.return_value = (True, "No findings")
+        mock_mkdtemp.return_value = "/tmp/test"
+        mock_rmtree.side_effect = OSError("Permission denied")
+        
+        repos = [{"url": "https://github.com/owner/repo", "name": "owner/repo"}]
+        
+        # Should not crash even if cleanup fails
+        results = analyze_repositories_with_semgrep(repos, mock_colors)
+        
+        assert len(results) == 1
+
+    @patch("tools.semgrep.semgrep_runner.shutil.rmtree")
+    @patch("tools.semgrep.semgrep_runner.tempfile.mkdtemp")
+    @patch("tools.semgrep.semgrep_runner._run_semgrep")
+    @patch("tools.semgrep.semgrep_runner._clone_repository")
+    @patch("tools.semgrep.semgrep_runner._check_command_exists")
+    def test_prints_pro_flag_message(
+        self,
+        mock_check,
+        mock_clone,
+        mock_semgrep,
+        mock_mkdtemp,
+        mock_rmtree,
+        mock_colors,
+        capsys,
+    ):
+        """Test prints pro flag message when use_pro is True."""
+        mock_check.return_value = True
+        mock_clone.return_value = True
+        mock_semgrep.return_value = (True, "No findings")
+        mock_mkdtemp.return_value = "/tmp/test"
+        
+        repos = [{"url": "https://github.com/owner/repo", "name": "owner/repo"}]
+        
+        analyze_repositories_with_semgrep(repos, mock_colors, use_pro=True)
+        
+        captured = capsys.readouterr()
+        assert "--pro" in captured.out
+
+    @patch("tools.semgrep.semgrep_runner.shutil.rmtree")
+    @patch("tools.semgrep.semgrep_runner.tempfile.mkdtemp")
+    @patch("tools.semgrep.semgrep_runner._run_semgrep")
+    @patch("tools.semgrep.semgrep_runner._clone_repository")
+    @patch("tools.semgrep.semgrep_runner._check_command_exists")
+    def test_prints_rules_path_message(
+        self,
+        mock_check,
+        mock_clone,
+        mock_semgrep,
+        mock_mkdtemp,
+        mock_rmtree,
+        mock_colors,
+        capsys,
+    ):
+        """Test prints rules path message when rules_path is provided."""
+        mock_check.return_value = True
+        mock_clone.return_value = True
+        mock_semgrep.return_value = (True, "No findings")
+        mock_mkdtemp.return_value = "/tmp/test"
+        
+        repos = [{"url": "https://github.com/owner/repo", "name": "owner/repo"}]
+        
+        analyze_repositories_with_semgrep(repos, mock_colors, rules_path="/path/to/rules")
+        
+        captured = capsys.readouterr()
+        assert "/path/to/rules" in captured.out

@@ -326,3 +326,810 @@ class TestGraphQLAPI:
         assert client.repositories["owner/repo1"]["description"] == "A sample repository"
         assert client.repositories["owner/repo1"]["url"] == "https://github.com/owner/repo1"
         assert client.repositories["owner/repo1"]["updated_at"] == "2024-12-20T10:00:00Z"
+
+    def test_update_repositories_handles_missing_repo(
+        self, mock_github_token
+    ):
+        """Test _update_repositories_from_response handles missing repo data."""
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {
+            "owner/repo1": {"name": "owner/repo1", "files": []},
+        }
+        
+        # Response with null repo data (repo not found)
+        response = {"data": {"repo0": None}}
+        
+        client._update_repositories_from_response(response, ["owner/repo1"])
+        
+        # Should not crash, repo should remain unchanged
+        assert client.repositories["owner/repo1"]["files"] == []
+
+
+class TestRestAPISearch:
+    """Tests for REST API search methods."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_basic(self, mock_request, mock_sleep, mock_github_token):
+        """Test basic search functionality."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "total_count": 1,
+            "items": [
+                {
+                    "path": "src/main.py",
+                    "html_url": "https://github.com/owner/repo/blob/main/src/main.py",
+                    "repository": {
+                        "full_name": "owner/repo",
+                        "html_url": "https://github.com/owner/repo",
+                    },
+                }
+            ],
+        }
+        mock_response.headers = {"X-RateLimit-Remaining": "10"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.search("extractall", max_pages=1)
+        
+        assert "owner/repo" in client.repositories
+        assert len(client.repositories["owner/repo"]["files"]) == 1
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_with_language_and_extension(self, mock_request, mock_sleep, mock_github_token):
+        """Test search with language and extension filters."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"total_count": 0, "items": []}
+        mock_response.headers = {"X-RateLimit-Remaining": "10"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.search("test", language="python", extension=".py", max_pages=1)
+        
+        # Check the query was built correctly
+        call_args = mock_request.call_args
+        assert "language:python" in str(call_args)
+        assert "extension:.py" in str(call_args)
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_handles_empty_results(self, mock_request, mock_sleep, mock_github_token):
+        """Test search handles empty results gracefully."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"total_count": 0, "items": []}
+        mock_response.headers = {"X-RateLimit-Remaining": "10"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.search("nonexistent_pattern_xyz", max_pages=1)
+        
+        assert len(client.repositories) == 0
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_filter_by_keywords(self, mock_get, mock_sleep, mock_github_token):
+        """Test filter_by_keywords filters files correctly."""
+        # Setup: mock the raw content fetch
+        mock_content_response = MagicMock()
+        mock_content_response.status_code = 200
+        mock_content_response.text = "This file contains path and directory keywords"
+        mock_get.return_value = mock_content_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.repositories = {
+            "owner/repo": {
+                "name": "owner/repo",
+                "files": [
+                    {
+                        "path": "src/main.py",
+                        "url": "https://github.com/owner/repo/blob/main/src/main.py",
+                        "raw_url": "https://raw.githubusercontent.com/owner/repo/main/src/main.py",
+                        "keyword_match": None,
+                        "keywords_found": [],
+                    }
+                ],
+            }
+        }
+        
+        client.filter_by_keywords(["path", "directory"])
+        
+        # File should be marked as matching
+        assert client.repositories["owner/repo"]["files"][0]["keyword_match"] is True
+        assert "path" in client.repositories["owner/repo"]["files"][0]["keywords_found"]
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_filter_by_keywords_no_match(self, mock_get, mock_sleep, mock_github_token):
+        """Test filter_by_keywords marks files without matches."""
+        mock_content_response = MagicMock()
+        mock_content_response.status_code = 200
+        mock_content_response.text = "This file has no relevant content"
+        mock_get.return_value = mock_content_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.repositories = {
+            "owner/repo": {
+                "name": "owner/repo",
+                "files": [
+                    {
+                        "path": "src/main.py",
+                        "url": "https://github.com/owner/repo/blob/main/src/main.py",
+                        "keyword_match": None,
+                        "keywords_found": [],
+                    }
+                ],
+            }
+        }
+        
+        client.filter_by_keywords(["path", "directory"])
+        
+        # File should be marked as NOT matching (removed from repo)
+        # The filter removes non-matching files, so repo might be empty
+        assert len(client.repositories) == 0 or \
+               client.repositories["owner/repo"]["files"][0]["keyword_match"] is False
+
+
+class TestRestAPIRetryAdvanced:
+    """Advanced tests for REST API retry functionality."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_request_with_retry_timeout_error(self, mock_get, mock_sleep, mock_github_token):
+        """Test _request_with_retry retries on timeout."""
+        mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
+        
+        client = RestAPI(token=mock_github_token)
+        
+        with pytest.raises(GitHubNetworkError) as exc_info:
+            client._request_with_retry("get", "https://api.github.com/test", max_retries=2)
+        
+        assert "timeout" in str(exc_info.value).lower()
+        assert mock_get.call_count == 2
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.post")
+    def test_request_with_retry_post_method(self, mock_post, mock_sleep, mock_github_token):
+        """Test _request_with_retry works with POST method."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        response = client._request_with_retry(
+            "post", 
+            "https://api.github.com/graphql",
+            json={"query": "test"}
+        )
+        
+        assert response.status_code == 200
+        mock_post.assert_called_once()
+
+    @patch("integrations.github.github.requests.get")
+    def test_request_with_retry_invalid_method(self, mock_get, mock_github_token):
+        """Test _request_with_retry raises on invalid method."""
+        client = RestAPI(token=mock_github_token)
+        
+        with pytest.raises(ValueError) as exc_info:
+            client._request_with_retry("delete", "https://api.github.com/test")
+        
+        assert "Unsupported HTTP method" in str(exc_info.value)
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_request_with_retry_exponential_backoff(self, mock_get, mock_sleep, mock_github_token):
+        """Test _request_with_retry uses exponential backoff."""
+        mock_get.side_effect = requests.exceptions.ConnectionError("Failed")
+        
+        client = RestAPI(token=mock_github_token)
+        
+        with pytest.raises(GitHubNetworkError):
+            client._request_with_retry("get", "https://api.github.com/test", max_retries=3)
+        
+        # Check sleep was called with increasing delays
+        assert mock_sleep.call_count == 2  # Called between retries (not after last)
+        delays = [call[0][0] for call in mock_sleep.call_args_list]
+        assert delays[1] > delays[0]  # Second delay should be longer
+
+    @patch("integrations.github.github.requests.get")
+    def test_request_with_retry_403_non_rate_limit(self, mock_get, mock_github_token):
+        """Test _request_with_retry returns 403 when not rate limited."""
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.headers = {"X-RateLimit-Remaining": "100"}  # Not rate limited
+        mock_get.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        response = client._request_with_retry("get", "https://api.github.com/test")
+        
+        # Should return response without raising (not a rate limit error)
+        assert response.status_code == 403
+
+
+class TestRestAPISearchByStars:
+    """Tests for REST API tiered star search."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_by_stars_basic(self, mock_request, mock_sleep, mock_github_token):
+        """Test search_by_stars executes tiered search."""
+        mock_repo_response = MagicMock()
+        mock_repo_response.status_code = 200
+        mock_repo_response.json.return_value = {
+            "items": [{"full_name": "owner/popular-repo"}]
+        }
+        mock_repo_response.headers = {"X-RateLimit-Remaining": "10"}
+        
+        mock_code_response = MagicMock()
+        mock_code_response.status_code = 200
+        mock_code_response.json.return_value = {
+            "items": [{
+                "path": "src/main.py",
+                "html_url": "https://github.com/owner/popular-repo/blob/main/src/main.py",
+                "repository": {
+                    "full_name": "owner/popular-repo",
+                    "html_url": "https://github.com/owner/popular-repo",
+                },
+            }]
+        }
+        mock_code_response.headers = {"X-RateLimit-Remaining": "10"}
+        
+        mock_request.side_effect = [mock_repo_response, mock_code_response] * 5
+        
+        client = RestAPI(token=mock_github_token)
+        client.search_by_stars("extractall", pages_per_tier=1, star_tiers=[(10000, None)])
+        
+        assert mock_request.called
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_by_stars_no_repos_in_tier(self, mock_request, mock_sleep, mock_github_token):
+        """Test search_by_stars handles empty tier results."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"items": []}
+        mock_response.headers = {"X-RateLimit-Remaining": "10"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.search_by_stars("nonexistent", pages_per_tier=1, star_tiers=[(10000, None)])
+        
+        assert len(client.repositories) == 0
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_find_repos_by_stars_rate_limit(self, mock_request, mock_sleep, mock_github_token):
+        """Test _find_repos_by_stars handles rate limit errors."""
+        mock_request.side_effect = GitHubRateLimitError("Rate limit exceeded")
+        
+        client = RestAPI(token=mock_github_token)
+        repos = client._find_repos_by_stars(min_stars=1000, max_stars=None)
+        
+        assert repos == []
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_find_repos_by_stars_network_error(self, mock_request, mock_sleep, mock_github_token):
+        """Test _find_repos_by_stars handles network errors."""
+        mock_request.side_effect = GitHubNetworkError("Network failed")
+        
+        client = RestAPI(token=mock_github_token)
+        repos = client._find_repos_by_stars(min_stars=1000, max_stars=None)
+        
+        assert repos == []
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_code_in_repo_success(self, mock_request, mock_sleep, mock_github_token):
+        """Test _search_code_in_repo finds matches."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [{
+                "path": "src/main.py",
+                "html_url": "https://github.com/owner/repo/blob/main/src/main.py",
+                "repository": {"full_name": "owner/repo"},
+            }]
+        }
+        mock_response.headers = {"X-RateLimit-Remaining": "10"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        result = client._search_code_in_repo("owner/repo", "extractall")
+        
+        assert result is True
+        assert "owner/repo" in client.repositories
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_code_in_repo_no_matches(self, mock_request, mock_sleep, mock_github_token):
+        """Test _search_code_in_repo returns False when no matches."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"items": []}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        result = client._search_code_in_repo("owner/repo", "nonexistent")
+        
+        assert result is False
+
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_code_in_repo_network_error(self, mock_request, mock_github_token):
+        """Test _search_code_in_repo handles network errors."""
+        mock_request.side_effect = GitHubNetworkError("Failed")
+        
+        client = RestAPI(token=mock_github_token)
+        result = client._search_code_in_repo("owner/repo", "query")
+        
+        assert result is False
+
+
+class TestRestAPIRateLimiting:
+    """Tests for rate limiting handling."""
+
+    @patch("integrations.github.github.time.sleep")
+    def test_handle_rate_limit_with_remaining(self, mock_sleep, mock_github_token):
+        """Test _handle_rate_limit with remaining requests."""
+        mock_response = MagicMock()
+        mock_response.headers = {"X-RateLimit-Remaining": "50"}
+        
+        client = RestAPI(token=mock_github_token)
+        client._handle_rate_limit(mock_response)
+        
+        mock_sleep.assert_called_once()
+
+    @patch("integrations.github.github.time.sleep")
+    def test_handle_rate_limit_no_header(self, mock_sleep, mock_github_token):
+        """Test _handle_rate_limit without rate limit header."""
+        mock_response = MagicMock()
+        mock_response.headers = {}
+        
+        client = RestAPI(token=mock_github_token)
+        client._handle_rate_limit(mock_response)
+        
+        mock_sleep.assert_called_once()
+
+    @patch("integrations.github.github.time.time")
+    @patch("integrations.github.github.time.sleep")
+    def test_handle_rate_limit_exhausted(self, mock_sleep, mock_time, mock_github_token):
+        """Test _handle_rate_limit when rate limit exhausted."""
+        mock_time.return_value = 1000
+        mock_response = MagicMock()
+        mock_response.headers = {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1005",
+        }
+        
+        client = RestAPI(token=mock_github_token)
+        client._handle_rate_limit(mock_response)
+        
+        mock_sleep.assert_called()
+
+
+class TestRestAPIUtilities:
+    """Tests for REST API utility methods."""
+
+    def test_remove_empty_repositories(self, mock_github_token):
+        """Test _remove_empty_repositories removes repos without files."""
+        client = RestAPI(token=mock_github_token)
+        client.repositories = {
+            "has_files": {"files": [{"path": "test.py"}]},
+            "no_files": {"files": []},
+        }
+        
+        client._remove_empty_repositories()
+        
+        assert "has_files" in client.repositories
+        assert "no_files" not in client.repositories
+
+    def test_log_api_error(self, mock_github_token, capsys):
+        """Test _log_api_error prints error details."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.json.return_value = {"message": "Not Found"}
+        
+        client = RestAPI(token=mock_github_token)
+        client._log_api_error(mock_response)
+        
+        captured = capsys.readouterr()
+        assert "404" in captured.out
+
+    def test_log_api_error_non_json(self, mock_github_token, capsys):
+        """Test _log_api_error handles non-JSON response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.json.side_effect = ValueError("Not JSON")
+        mock_response.text = "Internal Server Error"
+        
+        client = RestAPI(token=mock_github_token)
+        client._log_api_error(mock_response)
+        
+        captured = capsys.readouterr()
+        assert "500" in captured.out
+
+    def test_print_progress(self, mock_github_token, capsys):
+        """Test _print_progress outputs progress."""
+        client = RestAPI(token=mock_github_token)
+        client._print_progress(10, 100)
+        
+        captured = capsys.readouterr()
+        assert "10" in captured.out
+
+
+class TestGraphQLAPIBatchQuery:
+    """Tests for GraphQL batch query functionality."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_batch_query_success(self, mock_request, mock_sleep, mock_github_token):
+        """Test batch_query fetches repository metadata."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "repo0": {
+                    "nameWithOwner": "owner/repo1",
+                    "stargazerCount": 1000,
+                    "description": "Test repo",
+                    "url": "https://github.com/owner/repo1",
+                    "updatedAt": "2024-12-20T10:00:00Z",
+                }
+            }
+        }
+        mock_request.return_value = mock_response
+        
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {"owner/repo1": {"files": []}}
+        client.batch_query(batch_size=25)
+        
+        assert client.repositories["owner/repo1"]["stars"] == 1000
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_batch_query_empty_repos(self, mock_request, mock_sleep, mock_github_token):
+        """Test batch_query with no repositories."""
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {}
+        client.batch_query()
+        
+        mock_request.assert_not_called()
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_batch_query_handles_errors(self, mock_request, mock_sleep, mock_github_token):
+        """Test batch_query handles GraphQL errors gracefully."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {"repo0": None},
+            "errors": [{"message": "Repository not found"}],
+        }
+        mock_request.return_value = mock_response
+        
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {"owner/nonexistent": {"files": []}}
+        client.batch_query()
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_batch_query_network_error(self, mock_request, mock_sleep, mock_github_token):
+        """Test batch_query handles network errors."""
+        mock_request.side_effect = GitHubNetworkError("Network failed")
+        
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {"owner/repo": {"files": []}}
+        client.batch_query()
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_fetch_batch_data_api_error(self, mock_request, mock_sleep, mock_github_token):
+        """Test _fetch_batch_data raises on non-200 status."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_request.return_value = mock_response
+        
+        client = GraphQLAPI(token=mock_github_token)
+        
+        with pytest.raises(GitHubAPIError):
+            client._fetch_batch_data(["owner/repo"])
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_batch_query_rate_limit_error(self, mock_request, mock_sleep, mock_github_token):
+        """Test batch_query handles rate limit errors."""
+        mock_request.side_effect = GitHubRateLimitError("Rate limit exceeded")
+        
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {"owner/repo": {"files": []}}
+        client.batch_query()
+        # Should not crash
+
+
+class TestRestAPIRequestException:
+    """Tests for request exception handling in _request_with_retry."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_request_with_retry_timeout(self, mock_get, mock_sleep, mock_github_token):
+        """Test _request_with_retry handles timeout exceptions."""
+        mock_get.side_effect = requests.exceptions.Timeout("Connection timed out")
+        
+        client = RestAPI(token=mock_github_token)
+        
+        with pytest.raises(GitHubNetworkError) as exc_info:
+            client._request_with_retry("get", "https://api.github.com/test")
+        
+        assert "timeout" in str(exc_info.value).lower()
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_request_with_retry_connection_error(self, mock_get, mock_sleep, mock_github_token):
+        """Test _request_with_retry handles connection errors."""
+        mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
+        
+        client = RestAPI(token=mock_github_token)
+        
+        with pytest.raises(GitHubNetworkError) as exc_info:
+            client._request_with_retry("get", "https://api.github.com/test")
+        
+        assert "connection" in str(exc_info.value).lower()
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_request_with_retry_generic_request_exception(self, mock_get, mock_sleep, mock_github_token):
+        """Test _request_with_retry handles generic request exceptions."""
+        mock_get.side_effect = requests.exceptions.RequestException("Request failed")
+        
+        client = RestAPI(token=mock_github_token)
+        
+        with pytest.raises(GitHubNetworkError) as exc_info:
+            client._request_with_retry("get", "https://api.github.com/test")
+        
+        assert "failed" in str(exc_info.value).lower()
+
+
+class TestRestAPISearchAPIError:
+    """Tests for search method API error handling."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_handles_api_error(self, mock_request, mock_sleep, mock_github_token):
+        """Test search handles GitHubAPIError from _execute_search."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.json.return_value = {"message": "Internal Server Error"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.search("extractall", max_pages=1)
+        
+        # Should not crash, just break the loop
+
+
+class TestRestAPIFindReposByStarsEdgeCases:
+    """Tests for _find_repos_by_stars edge cases."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_find_repos_by_stars_non_200_status(self, mock_request, mock_sleep, mock_github_token):
+        """Test _find_repos_by_stars handles non-200 status code."""
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.json.return_value = {"message": "Forbidden"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        repos = client._find_repos_by_stars(min_stars=1000, max_stars=None)
+        
+        assert repos == []
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_find_repos_by_stars_with_max_stars(self, mock_request, mock_sleep, mock_github_token):
+        """Test _find_repos_by_stars with max_stars parameter."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [{"full_name": "owner/repo1"}, {"full_name": "owner/repo2"}]
+        }
+        mock_response.headers = {"X-RateLimit-Remaining": "10"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        repos = client._find_repos_by_stars(min_stars=100, max_stars=1000, max_pages=1)
+        
+        assert "owner/repo1" in repos
+        assert "owner/repo2" in repos
+
+
+class TestRestAPISearchCodeInRepoEdgeCases:
+    """Tests for _search_code_in_repo edge cases."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_code_in_repo_rate_limit_error(self, mock_request, mock_sleep, mock_github_token):
+        """Test _search_code_in_repo handles rate limit errors."""
+        mock_request.side_effect = GitHubRateLimitError("Rate limit exceeded")
+        
+        client = RestAPI(token=mock_github_token)
+        result = client._search_code_in_repo("owner/repo", "query")
+        
+        assert result is False
+
+
+class TestRestAPIFilterByKeywordsEdgeCases:
+    """Tests for filter_by_keywords edge cases."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_filter_by_keywords_fetch_exception(self, mock_get, mock_sleep, mock_github_token):
+        """Test filter_by_keywords handles request exceptions when fetching content."""
+        mock_get.side_effect = requests.RequestException("Network error")
+        
+        client = RestAPI(token=mock_github_token)
+        client.repositories = {
+            "owner/repo": {
+                "files": [{"path": "test.py", "url": "https://github.com/owner/repo/blob/main/test.py"}]
+            }
+        }
+        
+        client.filter_by_keywords(["keyword"])
+        
+        # Files should be kept even if fetch fails
+        assert "owner/repo" in client.repositories
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_filter_by_keywords_file_without_url(self, mock_get, mock_sleep, mock_github_token):
+        """Test filter_by_keywords handles files without URL."""
+        client = RestAPI(token=mock_github_token)
+        client.repositories = {
+            "owner/repo": {
+                "files": [{"path": "test.py"}]  # No URL
+            }
+        }
+        
+        client.filter_by_keywords(["keyword"])
+        
+        # File should be kept
+        assert len(client.repositories["owner/repo"]["files"]) == 1
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.requests.get")
+    def test_filter_by_keywords_non_200_response(self, mock_get, mock_sleep, mock_github_token):
+        """Test filter_by_keywords handles non-200 response when fetching content."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        client.repositories = {
+            "owner/repo": {
+                "files": [{"path": "test.py", "url": "https://github.com/owner/repo/blob/main/test.py"}]
+            }
+        }
+        
+        client.filter_by_keywords(["keyword"])
+        
+        # Files should be kept even if content fetch returns 404
+        assert "owner/repo" in client.repositories
+
+    def test_filter_by_keywords_empty_list(self, mock_github_token):
+        """Test filter_by_keywords returns early when keywords list is empty."""
+        client = RestAPI(token=mock_github_token)
+        client.repositories = {
+            "owner/repo": {
+                "files": [{"path": "test.py", "url": "https://github.com/owner/repo/blob/main/test.py"}]
+            }
+        }
+        
+        # Empty keywords should return early without filtering
+        client.filter_by_keywords([])
+        
+        # Repository should remain unchanged
+        assert len(client.repositories["owner/repo"]["files"]) == 1
+
+
+class TestSearchByStarsSkipExisting:
+    """Tests for search_by_stars skipping existing repositories."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_by_stars_skips_existing_repos(self, mock_request, mock_sleep, mock_github_token):
+        """Test search_by_stars skips repos already in repositories dict."""
+        # First response: repo search
+        mock_repo_response = MagicMock()
+        mock_repo_response.status_code = 200
+        mock_repo_response.json.return_value = {
+            "items": [{"full_name": "owner/existing-repo"}]
+        }
+        mock_repo_response.headers = {"X-RateLimit-Remaining": "10"}
+        
+        mock_request.return_value = mock_repo_response
+        
+        client = RestAPI(token=mock_github_token)
+        # Pre-populate with existing repo
+        client.repositories = {"owner/existing-repo": {"files": []}}
+        
+        client.search_by_stars("query", pages_per_tier=1, star_tiers=[(10000, None)])
+        
+        # Should still have only the original repo (skipped the duplicate)
+        assert "owner/existing-repo" in client.repositories
+
+
+class TestFindReposByStarsWithLanguage:
+    """Tests for _find_repos_by_stars with language filter."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_find_repos_by_stars_with_language(self, mock_request, mock_sleep, mock_github_token):
+        """Test _find_repos_by_stars includes language filter."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "items": [{"full_name": "owner/python-repo"}]
+        }
+        mock_response.headers = {"X-RateLimit-Remaining": "10"}
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        repos = client._find_repos_by_stars(min_stars=1000, max_stars=None, language="python", max_pages=1)
+        
+        assert "owner/python-repo" in repos
+        # Verify language was included in the query
+        call_args = mock_request.call_args
+        assert "language:python" in call_args[1]["params"]["q"]
+
+
+class TestSearchCodeInRepoNon200:
+    """Tests for _search_code_in_repo non-200 status handling."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_code_in_repo_non_200_status(self, mock_request, mock_sleep, mock_github_token):
+        """Test _search_code_in_repo returns False on non-200 status."""
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_request.return_value = mock_response
+        
+        client = RestAPI(token=mock_github_token)
+        result = client._search_code_in_repo("owner/repo", "query")
+        
+        assert result is False
+
+
+class TestGraphQLBatchQueryRateLimit:
+    """Tests for GraphQL batch_query rate limit handling."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_process_batch_rate_limit_error(self, mock_request, mock_sleep, mock_github_token, capsys):
+        """Test _process_batch handles rate limit errors."""
+        mock_request.side_effect = GitHubRateLimitError("Rate limit exceeded")
+        
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {"owner/repo": {"files": []}}
+        
+        # Call _process_batch directly with required arguments
+        client._process_batch(["owner/repo"], batch_num=1, total_batches=1)
+        
+        captured = capsys.readouterr()
+        assert "Rate limit" in captured.out
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.GraphQLAPI._request_with_retry")
+    def test_process_batch_api_error(self, mock_request, mock_sleep, mock_github_token, capsys):
+        """Test _process_batch handles generic API errors."""
+        mock_request.side_effect = GitHubAPIError("API error occurred")
+        
+        client = GraphQLAPI(token=mock_github_token)
+        client.repositories = {"owner/repo": {"files": []}}
+        
+        client._process_batch(["owner/repo"], batch_num=1, total_batches=1)
+        
+        captured = capsys.readouterr()
+        assert "Error" in captured.out
