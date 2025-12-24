@@ -1145,3 +1145,41 @@ class TestGraphQLBatchQueryRateLimit:
 
         captured = capsys.readouterr()
         assert "Error" in captured.out
+
+
+class TestSearchByStarsPageBudgetExhaustion:
+    """Tests for search_by_stars page budget exhaustion."""
+
+    @patch("integrations.github.github.time.sleep")
+    @patch("integrations.github.github.RestAPI._request_with_retry")
+    def test_search_by_stars_skips_tiers_when_budget_exhausted(
+        self, mock_request, mock_sleep, mock_github_token, capsys
+    ):
+        """Test search_by_stars skips tiers when page budget is exhausted."""
+        # Mock response that returns full page (100 items) so tier doesn't exhaust early
+        mock_repo_response = MagicMock()
+        mock_repo_response.status_code = 200
+        mock_repo_response.json.return_value = {
+            "items": [{"full_name": f"owner/repo{i}"} for i in range(100)]
+        }
+        mock_repo_response.headers = {"X-RateLimit-Remaining": "10"}
+
+        mock_code_response = MagicMock()
+        mock_code_response.status_code = 200
+        mock_code_response.json.return_value = {"items": []}
+        mock_code_response.headers = {"X-RateLimit-Remaining": "10"}
+
+        # Return repo response then code responses
+        mock_request.side_effect = [mock_repo_response, mock_code_response] * 100
+
+        client = RestAPI(token=mock_github_token)
+        # Use only 1 page budget with multiple tiers - later tiers should be skipped
+        client.search_by_stars(
+            "query",
+            max_pages=1,
+            star_tiers=[(100000, None), (50000, 99999), (10000, 49999)],
+        )
+
+        captured = capsys.readouterr()
+        # Should see "Skipped (page budget exhausted)" for later tiers
+        assert "Skipped (page budget exhausted)" in captured.out
