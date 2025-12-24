@@ -64,7 +64,7 @@ def search_repositories(
             language=config.language,
             extension=config.extension,
             per_page=config.per_page,
-            pages_per_tier=max(1, config.max_pages // 5),  # Distribute pages across tiers
+            max_pages=config.max_pages,  # Total page budget, exhausts higher tiers first
             additional_params=config.additional_params,
         )
     else:

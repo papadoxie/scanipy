@@ -573,7 +573,7 @@ class TestRestAPISearchByStars:
         mock_request.side_effect = [mock_repo_response, mock_code_response] * 5
 
         client = RestAPI(token=mock_github_token)
-        client.search_by_stars("extractall", pages_per_tier=1, star_tiers=[(10000, None)])
+        client.search_by_stars("extractall", max_pages=1, star_tiers=[(10000, None)])
 
         assert mock_request.called
 
@@ -588,7 +588,7 @@ class TestRestAPISearchByStars:
         mock_request.return_value = mock_response
 
         client = RestAPI(token=mock_github_token)
-        client.search_by_stars("nonexistent", pages_per_tier=1, star_tiers=[(10000, None)])
+        client.search_by_stars("nonexistent", max_pages=1, star_tiers=[(10000, None)])
 
         assert len(client.repositories) == 0
 
@@ -599,9 +599,10 @@ class TestRestAPISearchByStars:
         mock_request.side_effect = GitHubRateLimitError("Rate limit exceeded")
 
         client = RestAPI(token=mock_github_token)
-        repos = client._find_repos_by_stars(min_stars=1000, max_stars=None)
+        repos, pages_used = client._find_repos_by_stars(min_stars=1000, max_stars=None)
 
         assert repos == []
+        assert pages_used == 0
 
     @patch("integrations.github.github.time.sleep")
     @patch("integrations.github.github.RestAPI._request_with_retry")
@@ -610,9 +611,10 @@ class TestRestAPISearchByStars:
         mock_request.side_effect = GitHubNetworkError("Network failed")
 
         client = RestAPI(token=mock_github_token)
-        repos = client._find_repos_by_stars(min_stars=1000, max_stars=None)
+        repos, pages_used = client._find_repos_by_stars(min_stars=1000, max_stars=None)
 
         assert repos == []
+        assert pages_used == 0
 
     @patch("integrations.github.github.time.sleep")
     @patch("integrations.github.github.RestAPI._request_with_retry")
@@ -920,9 +922,10 @@ class TestRestAPIFindReposByStarsEdgeCases:
         mock_request.return_value = mock_response
 
         client = RestAPI(token=mock_github_token)
-        repos = client._find_repos_by_stars(min_stars=1000, max_stars=None)
+        repos, pages_used = client._find_repos_by_stars(min_stars=1000, max_stars=None)
 
         assert repos == []
+        assert pages_used == 1  # One page was attempted
 
     @patch("integrations.github.github.time.sleep")
     @patch("integrations.github.github.RestAPI._request_with_retry")
@@ -937,10 +940,11 @@ class TestRestAPIFindReposByStarsEdgeCases:
         mock_request.return_value = mock_response
 
         client = RestAPI(token=mock_github_token)
-        repos = client._find_repos_by_stars(min_stars=100, max_stars=1000, max_pages=1)
+        repos, pages_used = client._find_repos_by_stars(min_stars=100, max_stars=1000, max_pages=1)
 
         assert "owner/repo1" in repos
         assert "owner/repo2" in repos
+        assert pages_used == 1
 
 
 class TestRestAPISearchCodeInRepoEdgeCases:
@@ -1060,7 +1064,7 @@ class TestSearchByStarsSkipExisting:
         # Pre-populate with existing repo
         client.repositories = {"owner/existing-repo": {"files": []}}
 
-        client.search_by_stars("query", pages_per_tier=1, star_tiers=[(10000, None)])
+        client.search_by_stars("query", max_pages=1, star_tiers=[(10000, None)])
 
         # Should still have only the original repo (skipped the duplicate)
         assert "owner/existing-repo" in client.repositories
@@ -1080,11 +1084,12 @@ class TestFindReposByStarsWithLanguage:
         mock_request.return_value = mock_response
 
         client = RestAPI(token=mock_github_token)
-        repos = client._find_repos_by_stars(
+        repos, pages_used = client._find_repos_by_stars(
             min_stars=1000, max_stars=None, language="python", max_pages=1
         )
 
         assert "owner/python-repo" in repos
+        assert pages_used == 1
         # Verify language was included in the query
         call_args = mock_request.call_args
         assert "language:python" in call_args[1]["params"]["q"]

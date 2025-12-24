@@ -26,7 +26,6 @@ from .models import (
     CONTENT_FETCH_TIMEOUT,
     DEFAULT_BATCH_SIZE,
     DEFAULT_MAX_PAGES,
-    DEFAULT_PAGES_PER_TIER,
     DEFAULT_PER_PAGE,
     DEFAULT_STAR_TIERS,
     DEFAULT_TIMEOUT,
@@ -254,7 +253,7 @@ class RestAPI(BaseGitHubClient):
         language: str | None = None,
         extension: str | None = None,
         per_page: int = DEFAULT_PER_PAGE,
-        pages_per_tier: int = DEFAULT_PAGES_PER_TIER,
+        max_pages: int = 10,
         star_tiers: list[tuple[int, int | None]] | None = None,
         additional_params: str | None = None,
     ) -> None:
@@ -266,39 +265,55 @@ class RestAPI(BaseGitHubClient):
         2. Search for the code pattern within those specific repositories
 
         This works around GitHub's inability to sort code search results by stars.
+        Pages are consumed tier by tier, exhausting higher-star tiers first before
+        moving to lower-star tiers. This ensures repos are truly sorted by stars.
 
         Args:
             query: The search query string.
             language: Filter by programming language.
             extension: Filter by file extension.
             per_page: Number of results per page (max 100).
-            pages_per_tier: Maximum pages to fetch per star tier.
+            max_pages: Total page budget across all tiers. Higher tiers are exhausted first.
             star_tiers: List of (min_stars, max_stars) tuples. Use None for no upper limit.
                         Defaults to DEFAULT_STAR_TIERS.
             additional_params: Additional GitHub search qualifiers.
         """
         tiers = star_tiers or DEFAULT_STAR_TIERS
+        pages_remaining = max_pages
 
         print(f"{Colors.HEADER}{'═' * 60}{Colors.RESET}")
         print(
             f"{Colors.INFO}🌟 Starting tiered star search across {len(tiers)} tiers{Colors.RESET}"
         )
+        print(f"{Colors.INFO}📄 Total page budget: {max_pages} pages{Colors.RESET}")
         print(f"{Colors.HEADER}{'═' * 60}{Colors.RESET}")
 
         total_repos_before = len(self.repositories)
 
         for tier_idx, (min_stars, max_stars) in enumerate(tiers, 1):
-            tier_label = self._format_tier_label(min_stars, max_stars)
-            print(f"\n{Colors.INFO}📊 Tier {tier_idx}/{len(tiers)}: {tier_label}{Colors.RESET}")
+            if pages_remaining <= 0:
+                print(
+                    f"\n{Colors.WARNING}📊 Tier {tier_idx}/{len(tiers)}: "
+                    f"{self._format_tier_label(min_stars, max_stars)} - "
+                    f"Skipped (page budget exhausted){Colors.RESET}"
+                )
+                continue
 
-            # Step 1: Find repositories in this star tier
-            candidate_repos = self._find_repos_by_stars(
+            tier_label = self._format_tier_label(min_stars, max_stars)
+            print(
+                f"\n{Colors.INFO}📊 Tier {tier_idx}/{len(tiers)}: {tier_label} "
+                f"({pages_remaining} pages remaining){Colors.RESET}"
+            )
+
+            # Step 1: Find repositories in this star tier (use all remaining pages)
+            candidate_repos, pages_used = self._find_repos_by_stars(
                 min_stars=min_stars,
                 max_stars=max_stars,
                 language=language,
                 per_page=per_page,
-                max_pages=pages_per_tier,
+                max_pages=pages_remaining,
             )
+            pages_remaining -= pages_used
 
             if not candidate_repos:
                 print(f"{Colors.WARNING}  (i) No repositories found in this tier.{Colors.RESET}")
@@ -349,7 +364,7 @@ class RestAPI(BaseGitHubClient):
         language: str | None = None,
         per_page: int = DEFAULT_PER_PAGE,
         max_pages: int = 1,
-    ) -> list[str]:
+    ) -> tuple[list[str], int]:
         """
         Find repositories within a star range using the repository search API.
 
@@ -361,7 +376,7 @@ class RestAPI(BaseGitHubClient):
             max_pages: Maximum pages to fetch.
 
         Returns:
-            List of repository full names (owner/repo).
+            Tuple of (list of repository full names, number of pages actually used).
         """
         star_filter = self._build_star_filter(min_stars, max_stars)
         query_parts = [star_filter]
@@ -376,16 +391,18 @@ class RestAPI(BaseGitHubClient):
         }
 
         repos: list[str] = []
+        pages_used = 0
 
         for page in range(1, max_pages + 1):
             params["page"] = page
             print(
-                f"{Colors.PROGRESS}  📄 Finding repos (page {page}/{max_pages})...{Colors.RESET}",
+                f"{Colors.PROGRESS}  📄 Finding repos (page {page})...{Colors.RESET}",
                 end=" ",
             )
 
             try:
                 response = self._request_with_retry("get", GITHUB_REPO_SEARCH_URL, params=params)
+                pages_used += 1
 
                 if response.status_code != 200:
                     self._log_api_error(response)
@@ -397,7 +414,11 @@ class RestAPI(BaseGitHubClient):
                 repos.extend(page_repos)
                 print(f"{Colors.SUCCESS}✓ Found {len(page_repos)} repos{Colors.RESET}")
 
-                if not items:
+                # Stop if no more results (tier exhausted)
+                if len(items) < per_page:
+                    print(
+                        f"{Colors.INFO}  (i) Tier exhausted after {pages_used} pages{Colors.RESET}"
+                    )
                     break
 
                 self._handle_rate_limit(response)
@@ -409,7 +430,7 @@ class RestAPI(BaseGitHubClient):
                 print(f"{Colors.ERROR}✗ Network error: {e}{Colors.RESET}")
                 break
 
-        return repos
+        return repos, pages_used
 
     def _search_code_in_repo(
         self,
