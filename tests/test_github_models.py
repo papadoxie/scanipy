@@ -7,7 +7,6 @@ from integrations.github.models import (
     CONTENT_FETCH_TIMEOUT,
     DEFAULT_BATCH_SIZE,
     DEFAULT_MAX_PAGES,
-    DEFAULT_PAGES_PER_TIER,
     DEFAULT_PER_PAGE,
     DEFAULT_STAR_TIERS,
     DEFAULT_TIMEOUT,
@@ -121,7 +120,7 @@ class TestStarTierConstants:
 
     def test_default_star_tiers_count(self):
         """Test DEFAULT_STAR_TIERS has expected number of tiers."""
-        assert len(DEFAULT_STAR_TIERS) == 5
+        assert len(DEFAULT_STAR_TIERS) == 6
 
     def test_default_star_tiers_structure(self):
         """Test DEFAULT_STAR_TIERS has correct structure."""
@@ -133,17 +132,13 @@ class TestStarTierConstants:
 
     def test_default_star_tiers_order(self):
         """Test DEFAULT_STAR_TIERS is ordered from highest to lowest."""
-        # First tier should have highest min_stars
-        assert DEFAULT_STAR_TIERS[0][0] == 10000
+        # First tier should have highest min_stars (100k+)
+        assert DEFAULT_STAR_TIERS[0][0] == 100000
         assert DEFAULT_STAR_TIERS[0][1] is None  # No upper limit
 
-        # Last tier should have lowest min_stars
-        assert DEFAULT_STAR_TIERS[-1][0] == 0
-        assert DEFAULT_STAR_TIERS[-1][1] == 9
-
-    def test_default_pages_per_tier(self):
-        """Test DEFAULT_PAGES_PER_TIER has expected value."""
-        assert DEFAULT_PAGES_PER_TIER == 2
+        # Last tier should have lowest min_stars (1k-5k)
+        assert DEFAULT_STAR_TIERS[-1][0] == 1000
+        assert DEFAULT_STAR_TIERS[-1][1] == 4999
 
 
 class TestExceptions:

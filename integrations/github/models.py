@@ -42,15 +42,13 @@ PROGRESS_UPDATE_INTERVAL = 10
 # Star tiers for tiered search (highest to lowest priority)
 # Each tier is (min_stars, max_stars or None for unlimited)
 DEFAULT_STAR_TIERS = [
-    (10000, None),  # 10k+ stars - most popular
-    (1000, 9999),  # 1k-10k stars
-    (100, 999),  # 100-1k stars
-    (10, 99),  # 10-100 stars
-    (0, 9),  # <10 stars - least popular
+    (100000, None),  # 100k+ stars - most popular
+    (50000, 99999),  # 50k-100k stars
+    (20000, 49999),  # 20k-50k stars
+    (10000, 19999),  # 10k-20k stars
+    (5000, 9999),  # 5k-10k stars
+    (1000, 4999),  # 1k-5k stars
 ]
-
-# Maximum results per tier (to balance coverage across tiers)
-DEFAULT_PAGES_PER_TIER = 2
 
 
 # =============================================================================
