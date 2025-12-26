@@ -9,7 +9,7 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 ## 🎯 Features
 
 - **Smart Code Search**: Search GitHub for specific code patterns across millions of repositories
-- **Tiered Star Search**: Prioritize popular, well-maintained repositories by searching in star tiers (10k+, 1k-10k, 100-1k, etc.)
+- **Tiered Star Search**: Prioritize popular, well-maintained repositories by searching in star tiers (100k+, 50k-100k, 20k-50k, 10k-20k, 5k-10k, 1k-5k)
 - **Keyword Filtering**: Filter results by keywords found in file contents
 - **Multiple Sort Options**: Sort by stars (popularity) or recently updated
 - **Semgrep Integration**: Automatically clone and scan top repositories with Semgrep for security vulnerabilities
@@ -109,7 +109,7 @@ Scanipy offers two search strategies:
 
 | Strategy | Description | Best For |
 |----------|-------------|----------|
-| `tiered` (default) | Searches repositories in star tiers (10k+, 1k-10k, etc.) | Finding popular, well-maintained code |
+| `tiered` (default) | Searches repositories in star tiers (100k+, 50k-100k, 20k-50k, etc.) | Finding popular, well-maintained code |
 | `greedy` | Standard GitHub search, faster but may miss high-star repos | Quick searches, less popular patterns |
 
 ```bash
@@ -257,6 +257,22 @@ make coverage
 python -m pytest tests/test_github_client.py -v
 ```
 
+### Linting & Type Checking
+
+```bash
+# Run linter (ruff)
+make lint
+
+# Run formatter (ruff)
+make format
+
+# Run type checker (mypy)
+make typecheck
+
+# Run all checks (lint + typecheck + test)
+make check
+```
+
 ### Manual Hook Installation
 
 If not using `make`, you can install hooks manually:
@@ -293,8 +309,10 @@ scanipy/
 ### Code Quality
 
 - **100% test coverage** enforced via CI
-- **Pre-commit hooks** run tests before each commit
-- **GitHub Actions** validates all PRs
+- **Ruff linting** for code style and error detection
+- **Mypy type checking** for static type analysis
+- **Pre-commit hooks** run linting and tests before each commit
+- **GitHub Actions** validates all PRs with lint, typecheck, and test jobs
 
 ## 🤝 Contributing
 
