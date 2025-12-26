@@ -167,6 +167,7 @@ python scanipy.py --query "extractall" --run-semgrep --keep-cloned --clone-dir .
 | `--sort-by` | | Sort by: `stars` or `updated` | `stars` |
 | `--github-token` | | GitHub token (or use env var) | `$GITHUB_TOKEN` |
 | `--output` | `-o` | Output JSON file path | `repos.json` |
+| `--input-file` | `-i` | Load repos from JSON file (skip search) | None |
 | `--verbose` | `-v` | Enable verbose output | False |
 | `--run-semgrep` | | Run Semgrep on top 10 repos | False |
 | `--semgrep-args` | | Additional Semgrep arguments | None |
@@ -197,6 +198,21 @@ python scanipy.py --query "pickle.loads" --language python --run-semgrep
 
 # Find path traversal vulnerabilities (tarslip)
 python scanipy.py --query "extractall" --language python --run-semgrep --rules ./tools/semgrep/rules/tarslip.yaml
+```
+
+### Continue Analysis from Saved Results
+
+Scanipy automatically saves search results to `repos.json` (or your specified output file). You can continue analysis later without re-running the search:
+
+```bash
+# First, run a search (results saved to repos.json)
+python scanipy.py --query "memcpy" --language c --output repos.json
+
+# Later, continue with Semgrep analysis using saved results
+python scanipy.py --query "memcpy" --input-file repos.json --run-semgrep
+
+# Use a custom input file
+python scanipy.py --query "extractall" -i my_repos.json --run-semgrep --rules ./my_rules.yaml
 ```
 
 ### Code Pattern Analysis

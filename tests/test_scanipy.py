@@ -1,7 +1,10 @@
 """Tests for the scanipy CLI module."""
 
 import argparse
+import json
 import os
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -14,8 +17,10 @@ from scanipy import (
     Display,
     build_configs_from_args,
     create_argument_parser,
+    load_repos_from_file,
     main,
     parse_keywords,
+    save_repos_to_file,
 )
 
 
@@ -151,6 +156,24 @@ class TestCreateArgumentParser:
         parser = create_argument_parser()
         args = parser.parse_args(["--query", "test", "--keep-cloned"])
         assert args.keep_cloned is True
+
+    def test_input_file_default(self):
+        """Test --input-file default is None."""
+        parser = create_argument_parser()
+        args = parser.parse_args(["--query", "test"])
+        assert args.input_file is None
+
+    def test_input_file_accepted(self):
+        """Test --input-file is accepted."""
+        parser = create_argument_parser()
+        args = parser.parse_args(["--query", "test", "--input-file", "repos.json"])
+        assert args.input_file == "repos.json"
+
+    def test_input_file_short_form(self):
+        """Test -i short form for --input-file."""
+        parser = create_argument_parser()
+        args = parser.parse_args(["--query", "test", "-i", "repos.json"])
+        assert args.input_file == "repos.json"
 
 
 class TestBuildConfigsFromArgs:
@@ -649,3 +672,186 @@ class TestRunSemgrepAnalysis:
         run_semgrep_analysis(repos, config)
 
         mock_analyze.assert_called_once()
+
+
+class TestSaveReposToFile:
+    """Tests for save_repos_to_file function."""
+
+    def test_save_repos_creates_file(self, capsys):
+        """Test save_repos_to_file creates a JSON file."""
+        repos = [
+            {"name": "test/repo1", "stars": 100},
+            {"name": "test/repo2", "stars": 200},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.json"
+            save_repos_to_file(repos, str(output_path))
+
+            assert output_path.exists()
+            with output_path.open() as f:
+                saved_data = json.load(f)
+            assert saved_data == repos
+
+            captured = capsys.readouterr()
+            assert "Results saved to" in captured.out
+
+    def test_save_repos_with_unicode(self, capsys):
+        """Test save_repos_to_file handles unicode characters."""
+        repos = [{"name": "test/日本語", "description": "日本語テスト"}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.json"
+            save_repos_to_file(repos, str(output_path))
+
+            with output_path.open(encoding="utf-8") as f:
+                saved_data = json.load(f)
+            assert saved_data[0]["name"] == "test/日本語"
+
+
+class TestLoadReposFromFile:
+    """Tests for load_repos_from_file function."""
+
+    def test_load_repos_success(self):
+        """Test load_repos_from_file loads valid JSON."""
+        repos = [
+            {"name": "test/repo1", "stars": 100},
+            {"name": "test/repo2", "stars": 200},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "repos.json"
+            with input_path.open("w") as f:
+                json.dump(repos, f)
+
+            loaded = load_repos_from_file(str(input_path))
+            assert loaded == repos
+
+    def test_load_repos_file_not_found(self):
+        """Test load_repos_from_file raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError, match="Input file not found"):
+            load_repos_from_file("/nonexistent/path/repos.json")
+
+    def test_load_repos_invalid_json(self):
+        """Test load_repos_from_file raises JSONDecodeError for invalid JSON."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "invalid.json"
+            with input_path.open("w") as f:
+                f.write("not valid json {{{")
+
+            with pytest.raises(json.JSONDecodeError):
+                load_repos_from_file(str(input_path))
+
+    def test_load_repos_not_a_list(self):
+        """Test load_repos_from_file raises ValueError if not a list."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dict.json"
+            with input_path.open("w") as f:
+                json.dump({"name": "not a list"}, f)
+
+            with pytest.raises(ValueError, match="Expected a list"):
+                load_repos_from_file(str(input_path))
+
+
+class TestMainWithInputFile:
+    """Tests for main function with --input-file option."""
+
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_banner")
+    def test_main_with_input_file(self, mock_banner, mock_results, capsys):
+        """Test main loads repos from input file."""
+        repos = [{"name": "test/repo", "stars": 100, "files": []}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "repos.json"
+            with input_path.open("w") as f:
+                json.dump(repos, f)
+
+            with patch("sys.argv", ["scanipy", "-q", "test", "-i", str(input_path)]):
+                result = main()
+
+            assert result == 0
+            mock_results.assert_called_once()
+
+    def test_main_input_file_not_found(self, capsys):
+        """Test main returns error for missing input file."""
+        with patch("sys.argv", ["scanipy", "-q", "test", "-i", "/nonexistent/file.json"]):
+            result = main()
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "Input file not found" in captured.out
+
+    def test_main_input_file_invalid_json(self, capsys):
+        """Test main returns error for invalid JSON in input file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "invalid.json"
+            with input_path.open("w") as f:
+                f.write("not valid json")
+
+            with patch("sys.argv", ["scanipy", "-q", "test", "-i", str(input_path)]):
+                result = main()
+
+            assert result == 1
+            captured = capsys.readouterr()
+            assert "Invalid JSON" in captured.out
+
+    def test_main_input_file_not_a_list(self, capsys):
+        """Test main returns error when input file doesn't contain a list."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "dict.json"
+            with input_path.open("w") as f:
+                json.dump({"not": "a list"}, f)
+
+            with patch("sys.argv", ["scanipy", "-q", "test", "-i", str(input_path)]):
+                result = main()
+
+            assert result == 1
+            captured = capsys.readouterr()
+            assert "Expected a list" in captured.out
+
+    @patch("scanipy.run_semgrep_analysis")
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_banner")
+    def test_main_input_file_with_semgrep(self, mock_banner, mock_results, mock_semgrep):
+        """Test main runs semgrep when loading from input file."""
+        repos = [{"name": "test/repo", "stars": 100, "files": []}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "repos.json"
+            with input_path.open("w") as f:
+                json.dump(repos, f)
+
+            with patch(
+                "sys.argv", ["scanipy", "-q", "test", "-i", str(input_path), "--run-semgrep"]
+            ):
+                result = main()
+
+            assert result == 0
+            mock_semgrep.assert_called_once()
+
+
+class TestMainSavesOutput:
+    """Tests for main function saving output to file."""
+
+    @patch("scanipy.search_repositories")
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_banner")
+    @patch("scanipy.Display.print_search_info")
+    def test_main_saves_results(self, mock_info, mock_banner, mock_results, mock_search, capsys):
+        """Test main saves search results to output file."""
+        repos = [{"name": "test/repo", "stars": 100}]
+        mock_search.return_value = repos
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.json"
+
+            with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}):
+                with patch("sys.argv", ["scanipy", "-q", "test", "-o", str(output_path)]):
+                    result = main()
+
+            assert result == 0
+            assert output_path.exists()
+            with output_path.open() as f:
+                saved = json.load(f)
+            assert saved == repos

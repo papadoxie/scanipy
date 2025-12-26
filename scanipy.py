@@ -9,8 +9,10 @@ and running Semgrep analysis on discovered code.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from colorama import init
@@ -247,6 +249,9 @@ Examples:
 
     # Run Semgrep with custom rules
     scanipy --query "extractall" --run-semgrep --rules ./my_rules.yaml
+
+    # Continue analysis from saved results (skip search)
+    scanipy --query "extractall" --input-file repos.json --run-semgrep
 """
 
 
@@ -337,6 +342,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "-o",
         default=DEFAULT_OUTPUT_FILE,
         help=f"Output JSON file path (default: {DEFAULT_OUTPUT_FILE})",
+    )
+    output_group.add_argument(
+        "--input-file",
+        "-i",
+        default=None,
+        help="Load repositories from a JSON file instead of searching (for continuing analysis)",
     )
     output_group.add_argument(
         "--verbose",
@@ -462,6 +473,46 @@ def run_semgrep_analysis(
     )
 
 
+def save_repos_to_file(repos: list[dict[str, Any]], output_path: str) -> None:
+    """
+    Save repository list to a JSON file.
+
+    Args:
+        repos: List of repository dictionaries
+        output_path: Path to the output JSON file
+    """
+    with Path(output_path).open("w", encoding="utf-8") as f:
+        json.dump(repos, f, indent=2, ensure_ascii=False)
+    print(f"{Colors.SUCCESS}💾 Results saved to {output_path}{Colors.RESET}")
+
+
+def load_repos_from_file(input_path: str) -> list[dict[str, Any]]:
+    """
+    Load repository list from a JSON file.
+
+    Args:
+        input_path: Path to the input JSON file
+
+    Returns:
+        List of repository dictionaries
+
+    Raises:
+        FileNotFoundError: If the input file doesn't exist
+        json.JSONDecodeError: If the file is not valid JSON
+    """
+    path = Path(input_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+
+    with path.open(encoding="utf-8") as f:
+        repos = json.load(f)
+
+    if not isinstance(repos, list):
+        raise ValueError(f"Expected a list of repositories, got {type(repos).__name__}")
+
+    return repos
+
+
 def main() -> int:
     """
     Main entry point for the scanipy CLI.
@@ -477,22 +528,44 @@ def main() -> int:
         build_configs_from_args(args)
     )
 
-    # Validate GitHub token
-    if not github_token:
-        print(
-            f"{Colors.ERROR}❌ Error: GITHUB_TOKEN environment variable "
-            f"or --github-token argument must be set.{Colors.RESET}"
-        )
-        return 1
-
-    # Display banner and search info
+    # Display banner
     Display.print_banner()
-    Display.print_search_info(search_config, strategy=search_strategy, sort_order=sort_order)
 
-    # Perform GitHub search
-    repos = search_repositories(
-        search_config, github_token, strategy=search_strategy, sort_order=sort_order
-    )
+    # Check if loading from input file
+    if args.input_file:
+        try:
+            print(f"{Colors.INFO}📂 Loading repositories from {args.input_file}...{Colors.RESET}")
+            repos = load_repos_from_file(args.input_file)
+            print(f"{Colors.SUCCESS}✅ Loaded {len(repos)} repositories from file{Colors.RESET}\n")
+        except FileNotFoundError as e:
+            print(f"{Colors.ERROR}❌ Error: {e}{Colors.RESET}")
+            return 1
+        except json.JSONDecodeError as e:
+            print(f"{Colors.ERROR}❌ Error: Invalid JSON in input file: {e}{Colors.RESET}")
+            return 1
+        except ValueError as e:
+            print(f"{Colors.ERROR}❌ Error: {e}{Colors.RESET}")
+            return 1
+    else:
+        # Validate GitHub token for search
+        if not github_token:
+            print(
+                f"{Colors.ERROR}❌ Error: GITHUB_TOKEN environment variable "
+                f"or --github-token argument must be set.{Colors.RESET}"
+            )
+            return 1
+
+        # Display search info
+        Display.print_search_info(search_config, strategy=search_strategy, sort_order=sort_order)
+
+        # Perform GitHub search
+        repos = search_repositories(
+            search_config, github_token, strategy=search_strategy, sort_order=sort_order
+        )
+
+        # Save results to output file
+        if repos:
+            save_repos_to_file(repos, args.output)
 
     # Display results
     if repos:
