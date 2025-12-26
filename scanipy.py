@@ -536,6 +536,11 @@ def main() -> int:
         try:
             print(f"{Colors.INFO}📂 Loading repositories from {args.input_file}...{Colors.RESET}")
             repos = load_repos_from_file(args.input_file)
+            # Re-sort repos according to sort_order
+            if sort_order == SortOrder.UPDATED:
+                repos.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+            else:
+                repos.sort(key=lambda x: x.get("stars", 0), reverse=True)
             print(f"{Colors.SUCCESS}✅ Loaded {len(repos)} repositories from file{Colors.RESET}\n")
         except FileNotFoundError as e:
             print(f"{Colors.ERROR}❌ Error: {e}{Colors.RESET}")

@@ -830,6 +830,63 @@ class TestMainWithInputFile:
             assert result == 0
             mock_semgrep.assert_called_once()
 
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_banner")
+    def test_main_input_file_sorts_by_stars(self, mock_banner, mock_results):
+        """Test main sorts repos by stars when loading from input file."""
+        # Repos in wrong order (not sorted by stars)
+        repos = [
+            {"name": "low/stars", "stars": 100, "files": []},
+            {"name": "high/stars", "stars": 1000, "files": []},
+            {"name": "mid/stars", "stars": 500, "files": []},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "repos.json"
+            with input_path.open("w") as f:
+                json.dump(repos, f)
+
+            with patch("sys.argv", ["scanipy", "-q", "test", "-i", str(input_path)]):
+                result = main()
+
+            assert result == 0
+            # Check that print_results was called with sorted repos
+            call_args = mock_results.call_args[0]
+            sorted_repos = call_args[0]
+            assert sorted_repos[0]["name"] == "high/stars"
+            assert sorted_repos[1]["name"] == "mid/stars"
+            assert sorted_repos[2]["name"] == "low/stars"
+
+    @patch("scanipy.Display.print_results")
+    @patch("scanipy.Display.print_banner")
+    def test_main_input_file_sorts_by_updated(self, mock_banner, mock_results):
+        """Test main sorts repos by updated_at when --sort-by updated."""
+        # Repos in wrong order (not sorted by updated_at)
+        repos = [
+            {"name": "old/repo", "stars": 100, "updated_at": "2024-01-01T00:00:00Z", "files": []},
+            {"name": "new/repo", "stars": 50, "updated_at": "2025-12-26T00:00:00Z", "files": []},
+            {"name": "mid/repo", "stars": 200, "updated_at": "2025-06-15T00:00:00Z", "files": []},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "repos.json"
+            with input_path.open("w") as f:
+                json.dump(repos, f)
+
+            with patch(
+                "sys.argv",
+                ["scanipy", "-q", "test", "-i", str(input_path), "--sort-by", "updated"],
+            ):
+                result = main()
+
+            assert result == 0
+            # Check that print_results was called with sorted repos
+            call_args = mock_results.call_args[0]
+            sorted_repos = call_args[0]
+            assert sorted_repos[0]["name"] == "new/repo"
+            assert sorted_repos[1]["name"] == "mid/repo"
+            assert sorted_repos[2]["name"] == "old/repo"
+
 
 class TestMainSavesOutput:
     """Tests for main function saving output to file."""
