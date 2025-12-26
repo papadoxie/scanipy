@@ -74,6 +74,9 @@ class SearchConfig:
         return " ".join(parts)
 
 
+DEFAULT_RESULTS_DB = "semgrep_results.db"
+
+
 @dataclass
 class SemgrepConfig:
     """Configuration for Semgrep analysis."""
@@ -84,3 +87,5 @@ class SemgrepConfig:
     clone_dir: str | None = None
     keep_cloned: bool = False
     use_pro: bool = False
+    db_path: str | None = None
+    resume: bool = False

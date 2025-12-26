@@ -9,6 +9,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .results_db import ResultsDatabase
+
 
 def _check_command_exists(cmd: str) -> bool:
     """Return True when *cmd* can be found in PATH."""
@@ -66,8 +68,27 @@ def analyze_repositories_with_semgrep(
     keep_cloned: bool = False,
     rules_path: str | None = None,
     use_pro: bool = False,
+    db_path: str | None = None,
+    resume: bool = False,
+    query: str = "",
 ) -> list[dict[str, Any]]:
-    """Clone repositories in *repo_list* and run Semgrep on the first ten entries."""
+    """Clone repositories in *repo_list* and run Semgrep on the first ten entries.
+
+    Args:
+        repo_list: Iterable of repository dictionaries
+        colors: Color configuration object
+        semgrep_args: Additional arguments for Semgrep
+        clone_dir: Directory to clone repos into (default: temp dir)
+        keep_cloned: Whether to keep cloned repos after analysis
+        rules_path: Path to custom Semgrep rules
+        use_pro: Whether to use Semgrep Pro
+        db_path: Path to SQLite database for storing results
+        resume: Whether to resume from previous session
+        query: The search query (used for session tracking)
+
+    Returns:
+        List of analysis result dictionaries
+    """
     if not _check_command_exists("semgrep"):
         print(f"{colors.ERROR}❌ Error: semgrep is not installed on your system.{colors.RESET}")
         print(
@@ -78,6 +99,25 @@ def analyze_repositories_with_semgrep(
     if not _check_command_exists("git"):
         print(f"{colors.ERROR}❌ Error: git is not installed on your system.{colors.RESET}")
         return []
+
+    # Initialize database if path provided
+    db: ResultsDatabase | None = None
+    session_id: int | None = None
+    already_analyzed: set[str] = set()
+
+    if db_path:
+        db = ResultsDatabase(db_path)
+        if resume and query:
+            session_id = db.get_latest_session(query)
+            if session_id:
+                already_analyzed = db.get_analyzed_repos(session_id)
+                print(
+                    f"{colors.INFO}📂 Resuming session {session_id} - "
+                    f"{len(already_analyzed)} repos already analyzed{colors.RESET}"
+                )
+        if session_id is None:
+            session_id = db.create_session(query, rules_path, use_pro)
+            print(f"{colors.INFO}💾 Created new session {session_id} in database{colors.RESET}")
 
     using_temp_dir = clone_dir is None
     actual_clone_dir: str
@@ -95,15 +135,27 @@ def analyze_repositories_with_semgrep(
 
     repos_to_analyze = list(repo_list)[:10]
 
+    # Filter out already analyzed repos if resuming
+    if already_analyzed:
+        repos_to_analyze = [r for r in repos_to_analyze if r.get("name") not in already_analyzed]
+        if not repos_to_analyze:
+            print(f"{colors.SUCCESS}✅ All repositories already analyzed!{colors.RESET}")
+            # db and session_id are guaranteed to be set when already_analyzed is truthy
+            assert db is not None
+            assert session_id is not None
+            return db.get_session_results(session_id)
+
     print(f"{colors.HEADER}{'─' * 80}{colors.RESET}")
     print(
-        f"{colors.INFO}🚀 Running semgrep analysis on the top "
+        f"{colors.INFO}🚀 Running semgrep analysis on "
         f"{len(repos_to_analyze)} repositories...{colors.RESET}"
     )
     if rules_path:
         print(f"{colors.INFO}📝 Using custom rules from: {rules_path}{colors.RESET}")
     if use_pro:
         print(f"{colors.INFO}🔒 Using semgrep with --pro flag{colors.RESET}")
+    if db_path:
+        print(f"{colors.INFO}💾 Saving results to: {db_path}{colors.RESET}")
     print(f"{colors.HEADER}{'─' * 80}{colors.RESET}")
 
     results: list[dict[str, Any]] = []
@@ -138,11 +190,23 @@ def analyze_repositories_with_semgrep(
                 print(f"{colors.ERROR}❌ semgrep analysis failed{colors.RESET}")
                 print(f"{colors.ERROR}{output}{colors.RESET}")
 
-            results.append({"repo": repo_name, "success": success, "output": output})
+            result = {"repo": repo_name, "success": success, "output": output}
+            results.append(result)
+
+            # Save to database
+            if db and session_id:
+                db.save_result(session_id, repo_name, repo_url, success, output)
         else:
-            results.append(
-                {"repo": repo_name, "success": False, "output": "Failed to clone repository"}
-            )
+            result = {
+                "repo": repo_name,
+                "success": False,
+                "output": "Failed to clone repository",
+            }
+            results.append(result)
+
+            # Save failure to database
+            if db and session_id and repo_url:
+                db.save_result(session_id, repo_name, repo_url, False, "Failed to clone repository")
 
     if using_temp_dir and not keep_cloned:
         print(f"{colors.INFO}🧹 Cleaning up temporary directory...{colors.RESET}")
@@ -154,13 +218,20 @@ def analyze_repositories_with_semgrep(
     elif keep_cloned:
         print(f"{colors.INFO}💾 Repositories have been kept at: {actual_clone_dir}{colors.RESET}")
 
+    # Get all results including previously analyzed ones
+    all_results = results
+    if db and session_id and already_analyzed:
+        all_results = db.get_session_results(session_id)
+
     print(f"\n{colors.HEADER}{'─' * 80}{colors.RESET}")
-    print(f"{colors.INFO}📊 semrep Analysis Summary:{colors.RESET}")
-    successes = sum(1 for result in results if result.get("success"))
-    total = len(results)
+    print(f"{colors.INFO}📊 Semgrep Analysis Summary:{colors.RESET}")
+    successes = sum(1 for result in all_results if result.get("success"))
+    total = len(all_results)
     failed = total - successes
     print(f"{colors.INFO}✓ Successfully analyzed: {successes}/{total} repositories{colors.RESET}")
     print(f"{colors.INFO}✗ Failed to analyze: {failed}/{total} repositories{colors.RESET}")
+    if db_path:
+        print(f"{colors.INFO}💾 Results saved to: {db_path}{colors.RESET}")
     print(f"{colors.HEADER}{'─' * 80}{colors.RESET}")
 
-    return results
+    return all_results

@@ -388,6 +388,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep cloned repositories after analysis",
     )
+    semgrep_group.add_argument(
+        "--results-db",
+        default=None,
+        help="Path to SQLite database for storing Semgrep results (enables resume)",
+    )
+    semgrep_group.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume analysis from previous session (requires --results-db)",
+    )
 
     return parser
 
@@ -424,6 +434,8 @@ def build_configs_from_args(
         clone_dir=args.clone_dir,
         keep_cloned=args.keep_cloned,
         use_pro=args.pro,
+        db_path=args.results_db,
+        resume=args.resume,
     )
 
     # Resolve GitHub token
@@ -454,6 +466,7 @@ def build_configs_from_args(
 def run_semgrep_analysis(
     repos: list[dict[str, Any]],
     config: SemgrepConfig,
+    query: str = "",
 ) -> None:
     """
     Run Semgrep analysis on the provided repositories.
@@ -461,6 +474,7 @@ def run_semgrep_analysis(
     Args:
         repos: List of repository dictionaries
         config: Semgrep configuration
+        query: The search query (for session tracking)
     """
     analyze_repositories_with_semgrep(
         repo_list=repos,
@@ -470,6 +484,9 @@ def run_semgrep_analysis(
         keep_cloned=config.keep_cloned,
         rules_path=config.rules_path,
         use_pro=config.use_pro,
+        db_path=config.db_path,
+        resume=config.resume,
+        query=query,
     )
 
 
@@ -573,7 +590,7 @@ def main() -> int:
 
         # Run Semgrep analysis if requested
         if semgrep_config.enabled:
-            run_semgrep_analysis(repos, semgrep_config)
+            run_semgrep_analysis(repos, semgrep_config, query=search_config.query)
     else:
         Display.print_results(repos, search_config.query, sort_order=sort_order)
         Display.print_no_results_hint(bool(search_config.keywords))
