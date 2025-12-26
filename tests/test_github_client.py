@@ -1152,10 +1152,10 @@ class TestSearchByStarsPageBudgetExhaustion:
 
     @patch("integrations.github.github.time.sleep")
     @patch("integrations.github.github.RestAPI._request_with_retry")
-    def test_search_by_stars_skips_tiers_when_budget_exhausted(
+    def test_search_by_stars_stops_when_budget_exhausted(
         self, mock_request, mock_sleep, mock_github_token, capsys
     ):
-        """Test search_by_stars skips tiers when page budget is exhausted."""
+        """Test search_by_stars stops processing tiers when page budget is exhausted."""
         # Mock response that returns full page (100 items) so tier doesn't exhaust early
         mock_repo_response = MagicMock()
         mock_repo_response.status_code = 200
@@ -1173,7 +1173,7 @@ class TestSearchByStarsPageBudgetExhaustion:
         mock_request.side_effect = [mock_repo_response, mock_code_response] * 100
 
         client = RestAPI(token=mock_github_token)
-        # Use only 1 page budget with multiple tiers - later tiers should be skipped
+        # Use only 1 page budget with multiple tiers - later tiers should not be processed
         client.search_by_stars(
             "query",
             max_pages=1,
@@ -1181,5 +1181,7 @@ class TestSearchByStarsPageBudgetExhaustion:
         )
 
         captured = capsys.readouterr()
-        # Should see "Skipped (page budget exhausted)" for later tiers
-        assert "Skipped (page budget exhausted)" in captured.out
+        # Should only see Tier 1, not Tier 2 or Tier 3 (stops after budget exhausted)
+        assert "Tier 1/3" in captured.out
+        assert "Tier 2/3" not in captured.out
+        assert "Tier 3/3" not in captured.out

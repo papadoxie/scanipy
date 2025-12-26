@@ -292,12 +292,7 @@ class RestAPI(BaseGitHubClient):
 
         for tier_idx, (min_stars, max_stars) in enumerate(tiers, 1):
             if pages_remaining <= 0:
-                print(
-                    f"\n{Colors.WARNING}📊 Tier {tier_idx}/{len(tiers)}: "
-                    f"{self._format_tier_label(min_stars, max_stars)} - "
-                    f"Skipped (page budget exhausted){Colors.RESET}"
-                )
-                continue
+                break  # Stop processing tiers when page budget is exhausted
 
             tier_label = self._format_tier_label(min_stars, max_stars)
             print(
