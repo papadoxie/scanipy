@@ -149,7 +149,30 @@ python scanipy.py --query "extractall" --run-semgrep --pro
 
 # Keep cloned repositories after analysis
 python scanipy.py --query "extractall" --run-semgrep --keep-cloned --clone-dir ./repos
+
+# Save results to database (allows resuming if interrupted)
+python scanipy.py --query "extractall" --run-semgrep --results-db ./analysis.db
+
+# Resume interrupted analysis (skips already-analyzed repos)
+python scanipy.py --query "extractall" --run-semgrep --results-db ./analysis.db
 ```
+
+### Resuming Interrupted Analysis
+
+When running Semgrep analysis on many repositories, you can use `--results-db` to save progress to a SQLite database. If the analysis is interrupted (Ctrl+C, network error, etc.), simply re-run the same command to resume from where you left off:
+
+```bash
+# Start analysis with database persistence
+python scanipy.py --query "extractall" --run-semgrep --results-db ./results.db
+
+# If interrupted, just run the same command again - already analyzed repos will be skipped
+python scanipy.py --query "extractall" --run-semgrep --results-db ./results.db
+# Output: "📂 Resuming session 1 - 5 repos already analyzed"
+```
+
+The database stores:
+- Analysis sessions (query, timestamp, rules used)
+- Results for each repository (success/failure, Semgrep output)
 
 ## ⚙️ Configuration
 
@@ -175,6 +198,7 @@ python scanipy.py --query "extractall" --run-semgrep --keep-cloned --clone-dir .
 | `--rules` | | Custom Semgrep rules path | None |
 | `--clone-dir` | | Directory for cloned repos | Temp dir |
 | `--keep-cloned` | | Keep repos after analysis | False |
+| `--results-db` | | SQLite database for saving/resuming analysis | None |
 
 ### Environment Variables
 
