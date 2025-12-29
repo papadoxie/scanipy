@@ -173,3 +173,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 repos.json
+
+# CodeQL results
+my_sarif_results/
+codeql_results/

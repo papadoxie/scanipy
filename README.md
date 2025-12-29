@@ -13,6 +13,7 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 - **Keyword Filtering**: Filter results by keywords found in file contents
 - **Multiple Sort Options**: Sort by stars (popularity) or recently updated
 - **Semgrep Integration**: Automatically clone and scan top repositories with Semgrep for security vulnerabilities
+- **CodeQL Integration**: Run CodeQL analysis for deep semantic security scanning
 - **Custom Rules**: Use built-in security rules or provide your own Semgrep rules
 - **Colorful Output**: Beautiful terminal output with progress indicators
 
@@ -157,6 +158,28 @@ python scanipy.py --query "extractall" --run-semgrep --results-db ./analysis.db
 python scanipy.py --query "extractall" --run-semgrep --results-db ./analysis.db
 ```
 
+### CodeQL Analysis
+
+Run CodeQL semantic analysis on the top 10 repositories. CodeQL provides deep semantic security scanning using GitHub's code analysis engine:
+
+```bash
+# Run CodeQL analysis (requires language to be specified)
+python scanipy.py --query "extractall" --language python --run-codeql
+
+# Use custom query suite
+python scanipy.py --query "extractall" --language python --run-codeql --codeql-queries "python-security-extended"
+
+# Change output format
+python scanipy.py --query "extractall" --language python --run-codeql --codeql-format csv
+
+# Keep cloned repositories after analysis
+python scanipy.py --query "extractall" --language python --run-codeql --keep-cloned --clone-dir ./repos
+```
+
+**Supported Languages**: python, javascript, typescript, java, kotlin, c, cpp, csharp, go, ruby, swift
+
+**Prerequisites**: Install the [CodeQL CLI](https://codeql.github.com/docs/codeql-cli/getting-started-with-the-codeql-cli/)
+
 ### Resuming Interrupted Analysis
 
 When running Semgrep analysis on many repositories, you can use `--results-db` to save progress to a SQLite database. If the analysis is interrupted (Ctrl+C, network error, etc.), simply re-run the same command to resume from where you left off:
@@ -199,6 +222,9 @@ The database stores:
 | `--clone-dir` | | Directory for cloned repos | Temp dir |
 | `--keep-cloned` | | Keep repos after analysis | False |
 | `--results-db` | | SQLite database for saving/resuming analysis | None |
+| `--run-codeql` | | Run CodeQL on top 10 repos | False |
+| `--codeql-queries` | | CodeQL query suite or path | Default suite |
+| `--codeql-format` | | CodeQL output format | `sarif-latest` |
 
 ### Environment Variables
 
