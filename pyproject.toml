@@ -3,7 +3,7 @@
 # =============================================================================
 
 [project]
-name = "scanipy"
+name = "scanipy-cli"
 dynamic = ["version"]
 description = "A powerful CLI tool to scan GitHub repositories for security patterns and vulnerabilities"
 readme = "README.md"
