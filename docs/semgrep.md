@@ -2,6 +2,10 @@
 
 Scanipy can automatically clone and scan the top 10 repositories with [Semgrep](https://semgrep.dev/) for security vulnerabilities.
 
+!!! note "Command Usage"
+    If installed via `pip install scanipy-cli`, use `scanipy` command.
+    If running from source, use `python scanipy.py` instead.
+
 ## Prerequisites
 
 Install Semgrep before using this feature:
@@ -14,17 +18,17 @@ pip install semgrep
 
 ```bash
 # Run with default Semgrep rules
-python scanipy.py --query "extractall" --run-semgrep
+scanipy --query "extractall" --run-semgrep
 ```
 
 ## Custom Rules
 
 ```bash
 # Use custom Semgrep rules
-python scanipy.py --query "extractall" --run-semgrep --rules ./my_rules.yaml
+scanipy --query "extractall" --run-semgrep --rules ./my_rules.yaml
 
 # Use built-in tarslip rules
-python scanipy.py --query "extractall" --run-semgrep --rules ./tools/semgrep/rules/tarslip.yaml
+scanipy --query "extractall" --run-semgrep --rules ./tools/semgrep/rules/tarslip.yaml
 ```
 
 ## Semgrep Pro
@@ -32,7 +36,7 @@ python scanipy.py --query "extractall" --run-semgrep --rules ./tools/semgrep/rul
 If you have a Semgrep Pro license:
 
 ```bash
-python scanipy.py --query "extractall" --run-semgrep --pro
+scanipy --query "extractall" --run-semgrep --pro
 ```
 
 ## Additional Semgrep Arguments
@@ -40,20 +44,20 @@ python scanipy.py --query "extractall" --run-semgrep --pro
 Pass additional arguments directly to Semgrep:
 
 ```bash
-python scanipy.py --query "extractall" --run-semgrep --semgrep-args "--severity ERROR --json"
+scanipy --query "extractall" --run-semgrep --semgrep-args "--severity ERROR --json"
 ```
 
 ## Managing Cloned Repositories
 
 ```bash
 # Keep cloned repositories after analysis
-python scanipy.py --query "extractall" --run-semgrep --keep-cloned
+scanipy --query "extractall" --run-semgrep --keep-cloned
 
 # Specify a custom clone directory
-python scanipy.py --query "extractall" --run-semgrep --clone-dir ./repos
+scanipy --query "extractall" --run-semgrep --clone-dir ./repos
 
 # Combine both
-python scanipy.py --query "extractall" --run-semgrep --keep-cloned --clone-dir ./repos
+scanipy --query "extractall" --run-semgrep --keep-cloned --clone-dir ./repos
 ```
 
 ## Resuming Interrupted Analysis
@@ -62,10 +66,10 @@ When running Semgrep analysis on many repositories, you can use `--results-db` t
 
 ```bash
 # Start analysis with database persistence
-python scanipy.py --query "extractall" --run-semgrep --results-db ./results.db
+scanipy --query "extractall" --run-semgrep --results-db ./results.db
 
 # If interrupted, just run the same command again - already analyzed repos will be skipped
-python scanipy.py --query "extractall" --run-semgrep --results-db ./results.db
+scanipy --query "extractall" --run-semgrep --results-db ./results.db
 # Output: "📂 Resuming session 1 - 5 repos already analyzed"
 ```
 
@@ -83,7 +87,7 @@ Scanipy includes built-in security rules:
 Detect path traversal vulnerabilities in archive extraction:
 
 ```bash
-python scanipy.py --query "extractall" --run-semgrep --rules ./tools/semgrep/rules/tarslip.yaml
+scanipy --query "extractall" --run-semgrep --rules ./tools/semgrep/rules/tarslip.yaml
 ```
 
 ## Semgrep Options Reference

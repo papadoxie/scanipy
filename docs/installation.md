@@ -7,6 +7,14 @@
 - (Optional) [Semgrep](https://semgrep.dev/docs/getting-started/) for security analysis
 - (Optional) [CodeQL CLI](https://codeql.github.com/docs/codeql-cli/getting-started-with-the-codeql-cli/) for semantic security analysis
 
+## Install from PyPI (Recommended)
+
+```bash
+pip install scanipy-cli
+```
+
+This installs the `scanipy` command globally.
+
 ## Install from Source
 
 ```bash
@@ -41,7 +49,7 @@ echo "GITHUB_TOKEN=your_github_token_here" > .env
 ### Option 3: Command Line Argument
 
 ```bash
-python scanipy.py --query "test" --github-token "your_token_here"
+scanipy --query "test" --github-token "your_token_here"
 ```
 
 ## Installing Semgrep (Optional)
@@ -85,9 +93,12 @@ For detailed instructions, see the [CodeQL CLI documentation](https://codeql.git
 # Check Python version
 python --version  # Should be 3.12+
 
-# Run Scanipy help
+# Run Scanipy help (if installed via pip)
+scanipy --help
+
+# Or from source
 python scanipy.py --help
 
-# Run tests (optional)
+# Run tests (optional, from source only)
 python -m pytest
 ```

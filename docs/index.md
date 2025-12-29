@@ -5,6 +5,7 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 [![Tests](https://github.com/papadoxie/scanipy/actions/workflows/tests.yml/badge.svg)](https://github.com/papadoxie/scanipy/actions/workflows/tests.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](https://github.com/papadoxie/scanipy)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/scanipy-cli.svg)](https://pypi.org/project/scanipy-cli/)
 
 ## 🎯 Features
 
@@ -20,14 +21,17 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 ## ⚡ Quick Start
 
 ```bash
+# Install from PyPI
+pip install scanipy-cli
+
 # Search for repositories using extractall (potential path traversal)
-python scanipy.py --query "extractall" --language python
+scanipy --query "extractall" --language python
 
 # Search and run Semgrep analysis
-python scanipy.py --query "extractall" --language python --run-semgrep
+scanipy --query "extractall" --language python --run-semgrep
 
 # Search and run CodeQL analysis
-python scanipy.py --query "extractall" --language python --run-codeql
+scanipy --query "extractall" --language python --run-codeql
 ```
 
 ## 📚 Documentation

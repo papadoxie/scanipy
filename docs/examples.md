@@ -2,6 +2,10 @@
 
 Real-world usage examples for security research and code analysis.
 
+!!! note "Command Usage"
+    If installed via `pip install scanipy-cli`, use `scanipy` command.
+    If running from source, use `python scanipy.py` instead.
+
 ## Security Research
 
 ### Command Injection
@@ -9,7 +13,7 @@ Real-world usage examples for security research and code analysis.
 Find potential command injection vulnerabilities:
 
 ```bash
-python scanipy.py --query "os.system" --language python \
+scanipy --query "os.system" --language python \
   --keywords "user,input,request" --run-semgrep
 ```
 
@@ -18,7 +22,7 @@ python scanipy.py --query "os.system" --language python \
 Find potential SQL injection:
 
 ```bash
-python scanipy.py --query "execute(" --language python \
+scanipy --query "execute(" --language python \
   --keywords "format,user,%s" --run-semgrep
 ```
 
@@ -27,7 +31,7 @@ python scanipy.py --query "execute(" --language python \
 Find unsafe pickle usage:
 
 ```bash
-python scanipy.py --query "pickle.loads" --language python --run-semgrep
+scanipy --query "pickle.loads" --language python --run-semgrep
 ```
 
 ### Path Traversal (Tarslip)
@@ -35,14 +39,14 @@ python scanipy.py --query "pickle.loads" --language python --run-semgrep
 Find path traversal vulnerabilities in archive extraction:
 
 ```bash
-python scanipy.py --query "extractall" --language python \
+scanipy --query "extractall" --language python \
   --run-semgrep --rules ./tools/semgrep/rules/tarslip.yaml
 ```
 
 With CodeQL for deeper analysis:
 
 ```bash
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-queries "codeql/python-queries:Security/CWE-022/TarSlip.ql"
 ```
 
@@ -51,7 +55,7 @@ python scanipy.py --query "extractall" --language python --run-codeql \
 Find potential hardcoded credentials:
 
 ```bash
-python scanipy.py --query "password =" --language python \
+scanipy --query "password =" --language python \
   --keywords "secret,api_key,token" --run-semgrep
 ```
 
@@ -62,7 +66,7 @@ python scanipy.py --query "password =" --language python \
 Find deprecated urllib2 usage:
 
 ```bash
-python scanipy.py --query "urllib2" --language python
+scanipy --query "urllib2" --language python
 ```
 
 ### Library Usage
@@ -70,7 +74,7 @@ python scanipy.py --query "urllib2" --language python
 Find specific library usage in popular repos:
 
 ```bash
-python scanipy.py --query "import tensorflow" --language python \
+scanipy --query "import tensorflow" --language python \
   --search-strategy tiered
 ```
 
@@ -79,7 +83,7 @@ python scanipy.py --query "import tensorflow" --language python \
 Find recently updated repos using a pattern:
 
 ```bash
-python scanipy.py --query "FastAPI" --language python --sort-by updated
+scanipy --query "FastAPI" --language python --sort-by updated
 ```
 
 ## Advanced Filtering
@@ -89,7 +93,7 @@ python scanipy.py --query "FastAPI" --language python --sort-by updated
 Search but exclude specific organizations:
 
 ```bash
-python scanipy.py --query "eval(" \
+scanipy --query "eval(" \
   --additional-params "stars:>1000 -org:microsoft -org:google"
 ```
 
@@ -98,14 +102,14 @@ python scanipy.py --query "eval(" \
 Focus on very popular repositories:
 
 ```bash
-python scanipy.py --query "subprocess.Popen" --language python \
+scanipy --query "subprocess.Popen" --language python \
   --additional-params "stars:>10000"
 ```
 
 ### Combined Filters
 
 ```bash
-python scanipy.py \
+scanipy \
   --query "subprocess" \
   --language python \
   --keywords "shell=True,user" \
@@ -120,20 +124,20 @@ python scanipy.py \
 
 1. **Search and save results:**
    ```bash
-   python scanipy.py --query "extractall" --language python \
+   scanipy --query "extractall" --language python \
      --output tarslip_repos.json
    ```
 
 2. **Review results, then run analysis:**
    ```bash
-   python scanipy.py --query "extractall" \
+   scanipy --query "extractall" \
      --input-file tarslip_repos.json \
      --run-semgrep --rules ./tools/semgrep/rules/tarslip.yaml
    ```
 
 3. **Run CodeQL for deeper analysis:**
    ```bash
-   python scanipy.py --query "extractall" --language python \
+   scanipy --query "extractall" --language python \
      --input-file tarslip_repos.json \
      --run-codeql --codeql-output-dir ./tarslip_sarif
    ```
@@ -144,7 +148,7 @@ For large-scale analysis with resume capability:
 
 ```bash
 # Start analysis (can be interrupted)
-python scanipy.py --query "eval(" --language python \
+scanipy --query "eval(" --language python \
   --pages 10 \
   --run-semgrep \
   --results-db ./eval_analysis.db \
@@ -152,7 +156,7 @@ python scanipy.py --query "eval(" --language python \
   --clone-dir ./eval_repos
 
 # Resume if interrupted
-python scanipy.py --query "eval(" --language python \
+scanipy --query "eval(" --language python \
   --pages 10 \
   --run-semgrep \
   --results-db ./eval_analysis.db \
@@ -166,14 +170,14 @@ Run both Semgrep and CodeQL on the same repositories:
 
 ```bash
 # First, search and run Semgrep
-python scanipy.py --query "extractall" --language python \
+scanipy --query "extractall" --language python \
   --run-semgrep \
   --keep-cloned \
   --clone-dir ./repos \
   --output repos.json
 
 # Then run CodeQL on the same repos
-python scanipy.py --query "extractall" --language python \
+scanipy --query "extractall" --language python \
   --input-file repos.json \
   --run-codeql \
   --clone-dir ./repos \
@@ -185,13 +189,13 @@ python scanipy.py --query "extractall" --language python \
 ### JavaScript/TypeScript
 
 ```bash
-python scanipy.py --query "eval(" --language javascript --run-codeql
+scanipy --query "eval(" --language javascript --run-codeql
 ```
 
 ### Java
 
 ```bash
-python scanipy.py --query "Runtime.exec" --language java --run-codeql
+scanipy --query "Runtime.exec" --language java --run-codeql
 ```
 
 ### Go

@@ -5,6 +5,7 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 [![Tests](https://github.com/papadoxie/scanipy/actions/workflows/tests.yml/badge.svg)](https://github.com/papadoxie/scanipy/actions/workflows/tests.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](https://github.com/papadoxie/scanipy)
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/scanipy-cli.svg)](https://pypi.org/project/scanipy-cli/)
 
 ## 🎯 Features
 
@@ -18,7 +19,10 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 ## ⚡ Quick Start
 
 ```bash
-# Clone and setup
+# Install from PyPI
+pip install scanipy-cli
+
+# Or clone and setup from source
 git clone https://github.com/papadoxie/scanipy.git
 cd scanipy
 python -m venv .venv && source .venv/bin/activate
@@ -27,14 +31,17 @@ pip install -r requirements.txt
 # Set GitHub token
 export GITHUB_TOKEN="your_token_here"
 
-# Search for code patterns
+# Search for code patterns (if installed via pip)
+scanipy --query "extractall" --language python
+
+# Or run from source
 python scanipy.py --query "extractall" --language python
 
 # Run Semgrep analysis
-python scanipy.py --query "extractall" --language python --run-semgrep
+scanipy --query "extractall" --language python --run-semgrep
 
 # Run CodeQL analysis
-python scanipy.py --query "extractall" --language python --run-codeql
+scanipy --query "extractall" --language python --run-codeql
 ```
 
 ## 📚 Documentation

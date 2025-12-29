@@ -2,6 +2,10 @@
 
 Scanipy can run [CodeQL](https://codeql.github.com/) semantic analysis on the top 10 repositories. CodeQL provides deep semantic security scanning using GitHub's code analysis engine.
 
+!!! note "Command Usage"
+    If installed via `pip install scanipy-cli`, use `scanipy` command.
+    If running from source, use `python scanipy.py` instead.
+
 ## Prerequisites
 
 Install the CodeQL CLI before using this feature:
@@ -28,7 +32,7 @@ For detailed instructions, see the [CodeQL CLI documentation](https://codeql.git
 CodeQL requires a language to be specified:
 
 ```bash
-python scanipy.py --query "extractall" --language python --run-codeql
+scanipy --query "extractall" --language python --run-codeql
 ```
 
 ## Supported Languages
@@ -51,11 +55,11 @@ python scanipy.py --query "extractall" --language python --run-codeql
 
 ```bash
 # Use a different query suite
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-queries "python-security-extended"
 
 # Run a specific query for faster analysis
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-queries "codeql/python-queries:Security/CWE-022/TarSlip.ql"
 ```
 
@@ -63,15 +67,15 @@ python scanipy.py --query "extractall" --language python --run-codeql \
 
 ```bash
 # SARIF format (default)
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-format sarif-latest
 
 # CSV format
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-format csv
 
 # Text format
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-format text
 ```
 
@@ -81,10 +85,10 @@ Save SARIF results to files for later analysis:
 
 ```bash
 # Save to default directory (./codeql_results)
-python scanipy.py --query "extractall" --language python --run-codeql
+scanipy --query "extractall" --language python --run-codeql
 
 # Save to custom directory
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-output-dir ./my_sarif_results
 ```
 
@@ -100,7 +104,7 @@ my_sarif_results/
 
 ```bash
 # Keep cloned repositories after analysis
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --keep-cloned --clone-dir ./repos
 ```
 
@@ -112,10 +116,10 @@ Running the full security suite can take a long time. For faster analysis, use s
 
 ```bash
 # Full suite (slow)
-python scanipy.py --query "extractall" --language python --run-codeql
+scanipy --query "extractall" --language python --run-codeql
 
 # Specific query (fast)
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-queries "codeql/python-queries:Security/CWE-022/TarSlip.ql"
 ```
 
@@ -124,7 +128,7 @@ python scanipy.py --query "extractall" --language python --run-codeql \
 Reduce the number of repositories to analyze:
 
 ```bash
-python scanipy.py --query "extractall" --language python --run-codeql --pages 1
+scanipy --query "extractall" --language python --run-codeql --pages 1
 ```
 
 ## CodeQL Options Reference

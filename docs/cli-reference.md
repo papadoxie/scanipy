@@ -2,10 +2,14 @@
 
 Complete command-line options reference for Scanipy.
 
+!!! note "Command Usage"
+    If installed via `pip install scanipy-cli`, use `scanipy` command.
+    If running from source, use `python scanipy.py` instead.
+
 ## Synopsis
 
 ```bash
-python scanipy.py --query QUERY [OPTIONS]
+scanipy --query QUERY [OPTIONS]
 ```
 
 ## Required Arguments
@@ -79,27 +83,27 @@ These options apply to both Semgrep and CodeQL analysis:
 ### Basic Search
 
 ```bash
-python scanipy.py --query "pickle.loads" --language python
+scanipy --query "pickle.loads" --language python
 ```
 
 ### With Semgrep Analysis
 
 ```bash
-python scanipy.py --query "extractall" --language python --run-semgrep \
+scanipy --query "extractall" --language python --run-semgrep \
   --rules ./tools/semgrep/rules/tarslip.yaml
 ```
 
 ### With CodeQL Analysis
 
 ```bash
-python scanipy.py --query "extractall" --language python --run-codeql \
+scanipy --query "extractall" --language python --run-codeql \
   --codeql-output-dir ./results
 ```
 
 ### Full Example
 
 ```bash
-python scanipy.py \
+scanipy \
   --query "subprocess" \
   --language python \
   --keywords "shell=True,user" \
