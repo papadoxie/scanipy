@@ -177,3 +177,9 @@ repos.json
 # CodeQL results
 my_sarif_results/
 codeql_results/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+_version.py
