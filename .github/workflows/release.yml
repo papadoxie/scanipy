@@ -7,10 +7,11 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # Required for trusted publishing to PyPI
 
 jobs:
-  release:
-    name: Build and Release
+  build:
+    name: Build Package
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -40,6 +41,28 @@ jobs:
       - name: List built artifacts
         run: ls -la dist/
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
       - name: Generate changelog
         id: changelog
         uses: orhun/git-cliff-action@v3
@@ -61,12 +84,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi  # Uses the 'pypi' environment you created
+    if: ${{ !contains(github.ref, '-alpha') && !contains(github.ref, '-beta') && !contains(github.ref, '-rc') }}
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
       - name: Publish to PyPI
-        if: ${{ !contains(github.ref, '-alpha') && !contains(github.ref, '-beta') && !contains(github.ref, '-rc') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
-        env:
-          # Configure PyPI token in repository secrets as PYPI_API_TOKEN
-          # https://pypi.org/manage/account/token/
-          password: ${{ secrets.PYPI_API_TOKEN }}
