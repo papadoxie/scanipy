@@ -27,10 +27,12 @@ from models import (
     DEFAULT_OUTPUT_FILE,
     MAX_DISPLAY_REPOS,
     MAX_FILES_PREVIEW,
+    CodeQLConfig,
     Colors,
     SearchConfig,
     SemgrepConfig,
 )
+from tools.codeql.codeql_runner import analyze_repositories_with_codeql
 from tools.semgrep.semgrep_runner import analyze_repositories_with_semgrep
 
 # Initialize colorama for cross-platform color support
@@ -399,6 +401,30 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Resume analysis from previous session (requires --results-db)",
     )
 
+    # CodeQL options
+    codeql_group = parser.add_argument_group("CodeQL Analysis")
+    codeql_group.add_argument(
+        "--run-codeql",
+        action="store_true",
+        help="Run CodeQL analysis on the top 10 repositories",
+    )
+    codeql_group.add_argument(
+        "--codeql-queries",
+        default=None,
+        help="Custom CodeQL query suite or path to queries",
+    )
+    codeql_group.add_argument(
+        "--codeql-format",
+        default="sarif-latest",
+        choices=["sarif-latest", "csv", "text"],
+        help="Output format for CodeQL results (default: sarif-latest)",
+    )
+    codeql_group.add_argument(
+        "--codeql-output-dir",
+        default=None,
+        help="Directory to save SARIF results (default: ./codeql_results)",
+    )
+
     return parser
 
 
@@ -411,12 +437,13 @@ def parse_keywords(keywords_str: str) -> list[str]:
 
 def build_configs_from_args(
     args: argparse.Namespace,
-) -> tuple[SearchConfig, SemgrepConfig, str | None, SearchStrategy, SortOrder]:
+) -> tuple[SearchConfig, SemgrepConfig, CodeQLConfig, str | None, SearchStrategy, SortOrder]:
     """
     Build configuration objects from parsed arguments.
 
     Returns:
-        Tuple of (SearchConfig, SemgrepConfig, github_token, search_strategy, sort_order)
+        Tuple of (SearchConfig, SemgrepConfig, CodeQLConfig, github_token,
+        search_strategy, sort_order)
     """
     search_config = SearchConfig(
         query=args.query,
@@ -438,6 +465,15 @@ def build_configs_from_args(
         resume=args.resume,
     )
 
+    codeql_config = CodeQLConfig(
+        enabled=args.run_codeql,
+        query_suite=args.codeql_queries,
+        clone_dir=args.clone_dir,
+        keep_cloned=args.keep_cloned,
+        output_format=args.codeql_format,
+        output_dir=args.codeql_output_dir,
+    )
+
     # Resolve GitHub token
     github_token = args.github_token or os.getenv("GITHUB_TOKEN")
 
@@ -455,7 +491,7 @@ def build_configs_from_args(
     }
     sort_order = sort_map[args.sort_by]
 
-    return search_config, semgrep_config, github_token, search_strategy, sort_order
+    return search_config, semgrep_config, codeql_config, github_token, search_strategy, sort_order
 
 
 # =============================================================================
@@ -487,6 +523,31 @@ def run_semgrep_analysis(
         db_path=config.db_path,
         resume=config.resume,
         query=query,
+    )
+
+
+def run_codeql_analysis(
+    repos: list[dict[str, Any]],
+    config: CodeQLConfig,
+    language: str = "",
+) -> None:
+    """
+    Run CodeQL analysis on the provided repositories.
+
+    Args:
+        repos: List of repository dictionaries
+        config: CodeQL configuration
+        language: Programming language for analysis
+    """
+    analyze_repositories_with_codeql(
+        repo_list=repos,
+        colors=Colors,
+        language=language,
+        clone_dir=config.clone_dir,
+        keep_cloned=config.keep_cloned,
+        query_suite=config.query_suite,
+        output_format=config.output_format,
+        output_dir=config.output_dir,
     )
 
 
@@ -541,7 +602,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Build configuration objects
-    search_config, semgrep_config, github_token, search_strategy, sort_order = (
+    search_config, semgrep_config, codeql_config, github_token, search_strategy, sort_order = (
         build_configs_from_args(args)
     )
 
@@ -591,6 +652,16 @@ def main() -> int:
         # Run Semgrep analysis if requested
         if semgrep_config.enabled:
             run_semgrep_analysis(repos, semgrep_config, query=search_config.query)
+
+        # Run CodeQL analysis if requested
+        if codeql_config.enabled:
+            if not search_config.language:
+                print(
+                    f"{Colors.ERROR}❌ Error: --language is required "
+                    f"for CodeQL analysis.{Colors.RESET}"
+                )
+                return 1
+            run_codeql_analysis(repos, codeql_config, language=search_config.language)
     else:
         Display.print_results(repos, search_config.query, sort_order=sort_order)
         Display.print_no_results_hint(bool(search_config.keywords))
