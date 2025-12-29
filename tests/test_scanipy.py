@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from integrations.github.search import SearchStrategy, SortOrder
-from models import SearchConfig, SemgrepConfig
+from models import CodeQLConfig, SearchConfig, SemgrepConfig
 
 # Import after path setup in conftest
 from scanipy import (
@@ -187,12 +187,13 @@ class TestBuildConfigsFromArgs:
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
             result = build_configs_from_args(args)
 
-        assert len(result) == 5
+        assert len(result) == 6
         assert isinstance(result[0], SearchConfig)
         assert isinstance(result[1], SemgrepConfig)
-        assert isinstance(result[2], str)  # token
-        assert isinstance(result[3], SearchStrategy)
-        assert isinstance(result[4], SortOrder)
+        assert isinstance(result[2], CodeQLConfig)
+        assert isinstance(result[3], str)  # token
+        assert isinstance(result[4], SearchStrategy)
+        assert isinstance(result[5], SortOrder)
 
     def test_search_config_populated(self):
         """Test SearchConfig is populated correctly."""
@@ -213,7 +214,7 @@ class TestBuildConfigsFromArgs:
         )
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
-            search_config, _, _, _, _ = build_configs_from_args(args)
+            search_config, _, _, _, _, _ = build_configs_from_args(args)
 
         assert search_config.query == "extractall"
         assert search_config.language == "python"
@@ -240,7 +241,7 @@ class TestBuildConfigsFromArgs:
         )
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
-            _, semgrep_config, _, _, _ = build_configs_from_args(args)
+            _, semgrep_config, _, _, _, _ = build_configs_from_args(args)
 
         assert semgrep_config.enabled is True
         assert semgrep_config.args == "--json --verbose"
@@ -262,7 +263,7 @@ class TestBuildConfigsFromArgs:
         )
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "env_token"}):
-            _, _, token, _, _ = build_configs_from_args(args)
+            _, _, _, token, _, _ = build_configs_from_args(args)
 
         assert token == "arg_token"
 
@@ -272,7 +273,7 @@ class TestBuildConfigsFromArgs:
         args = parser.parse_args(["--query", "test"])
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "env_token"}):
-            _, _, token, _, _ = build_configs_from_args(args)
+            _, _, _, token, _, _ = build_configs_from_args(args)
 
         assert token == "env_token"
 
@@ -282,7 +283,7 @@ class TestBuildConfigsFromArgs:
         args = parser.parse_args(["--query", "test", "--search-strategy", "tiered"])
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
-            _, _, _, strategy, _ = build_configs_from_args(args)
+            _, _, _, _, strategy, _ = build_configs_from_args(args)
 
         assert strategy == SearchStrategy.TIERED_STARS
 
@@ -292,7 +293,7 @@ class TestBuildConfigsFromArgs:
         args = parser.parse_args(["--query", "test", "--search-strategy", "greedy"])
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
-            _, _, _, strategy, _ = build_configs_from_args(args)
+            _, _, _, _, strategy, _ = build_configs_from_args(args)
 
         assert strategy == SearchStrategy.GREEDY
 
@@ -302,7 +303,7 @@ class TestBuildConfigsFromArgs:
         args = parser.parse_args(["--query", "test", "--sort-by", "stars"])
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
-            _, _, _, _, sort_order = build_configs_from_args(args)
+            _, _, _, _, _, sort_order = build_configs_from_args(args)
 
         assert sort_order == SortOrder.STARS
 
@@ -312,7 +313,7 @@ class TestBuildConfigsFromArgs:
         args = parser.parse_args(["--query", "test", "--sort-by", "updated"])
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
-            _, _, _, _, sort_order = build_configs_from_args(args)
+            _, _, _, _, _, sort_order = build_configs_from_args(args)
 
         assert sort_order == SortOrder.UPDATED
 
@@ -672,6 +673,104 @@ class TestRunSemgrepAnalysis:
         run_semgrep_analysis(repos, config)
 
         mock_analyze.assert_called_once()
+
+
+class TestRunCodeqlAnalysis:
+    """Tests for run_codeql_analysis function."""
+
+    @patch("scanipy.analyze_repositories_with_codeql")
+    def test_run_codeql_analysis_called(self, mock_analyze):
+        """Test run_codeql_analysis calls analyze function."""
+        from models import CodeQLConfig
+        from scanipy import run_codeql_analysis
+
+        repos = [{"name": "test/repo", "url": "https://github.com/test/repo"}]
+        config = CodeQLConfig(enabled=True)
+
+        run_codeql_analysis(repos, config, language="python")
+
+        mock_analyze.assert_called_once()
+
+    @patch("scanipy.analyze_repositories_with_codeql")
+    def test_run_codeql_analysis_passes_config(self, mock_analyze):
+        """Test run_codeql_analysis passes config correctly."""
+        from models import CodeQLConfig
+        from scanipy import run_codeql_analysis
+
+        repos = [{"name": "test/repo", "url": "https://github.com/test/repo"}]
+        config = CodeQLConfig(
+            enabled=True,
+            query_suite="custom-queries",
+            clone_dir="/tmp/repos",
+            keep_cloned=True,
+            output_format="csv",
+        )
+
+        run_codeql_analysis(repos, config, language="python")
+
+        mock_analyze.assert_called_once()
+        call_kwargs = mock_analyze.call_args[1]
+        assert call_kwargs["language"] == "python"
+        assert call_kwargs["clone_dir"] == "/tmp/repos"
+        assert call_kwargs["keep_cloned"] is True
+        assert call_kwargs["query_suite"] == "custom-queries"
+        assert call_kwargs["output_format"] == "csv"
+
+
+class TestMainWithCodeql:
+    """Tests for main function with CodeQL."""
+
+    @patch("scanipy.search_repositories")
+    @patch("scanipy.run_codeql_analysis")
+    @patch("scanipy.Display.print_search_info")
+    @patch("scanipy.Display.print_banner")
+    def test_main_with_codeql(
+        self,
+        mock_banner,
+        mock_search_info,
+        mock_codeql,
+        mock_search,
+    ):
+        """Test main function runs CodeQL analysis."""
+        mock_search.return_value = [
+            {"name": "test/repo", "url": "https://github.com/test/repo", "files": []}
+        ]
+
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
+            with patch(
+                "sys.argv",
+                ["scanipy", "--query", "test", "--language", "python", "--run-codeql"],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        mock_codeql.assert_called_once()
+
+    @patch("scanipy.search_repositories")
+    @patch("scanipy.Display.print_search_info")
+    @patch("scanipy.Display.print_banner")
+    def test_main_codeql_requires_language(
+        self,
+        mock_banner,
+        mock_search_info,
+        mock_search,
+        capsys,
+    ):
+        """Test main function requires language for CodeQL."""
+        mock_search.return_value = [
+            {"name": "test/repo", "url": "https://github.com/test/repo", "files": []}
+        ]
+
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test_token"}):
+            with patch(
+                "sys.argv",
+                ["scanipy", "--query", "test", "--run-codeql"],
+            ):
+                exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "language is required" in captured.out.lower()
 
 
 class TestSaveReposToFile:
