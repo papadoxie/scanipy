@@ -34,6 +34,7 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 - Python 3.12 or higher
 - A GitHub Personal Access Token ([create one here](https://github.com/settings/tokens))
 - (Optional) [Semgrep](https://semgrep.dev/docs/getting-started/) for security analysis
+- (Optional) [CodeQL CLI](https://codeql.github.com/docs/codeql-cli/getting-started-with-the-codeql-cli/) for semantic security analysis
 
 ### Install from source
 
@@ -174,6 +175,12 @@ python scanipy.py --query "extractall" --language python --run-codeql --codeql-f
 
 # Keep cloned repositories after analysis
 python scanipy.py --query "extractall" --language python --run-codeql --keep-cloned --clone-dir ./repos
+
+# Save SARIF results to a specific directory
+python scanipy.py --query "extractall" --language python --run-codeql --codeql-output-dir ./my_sarif_results
+
+# Run a specific query for faster analysis
+python scanipy.py --query "extractall" --language python --run-codeql --codeql-queries "codeql/python-queries:Security/CWE-022/TarSlip.ql"
 ```
 
 **Supported Languages**: python, javascript, typescript, java, kotlin, c, cpp, csharp, go, ruby, swift
@@ -225,6 +232,7 @@ The database stores:
 | `--run-codeql` | | Run CodeQL on top 10 repos | False |
 | `--codeql-queries` | | CodeQL query suite or path | Default suite |
 | `--codeql-format` | | CodeQL output format | `sarif-latest` |
+| `--codeql-output-dir` | | Directory to save SARIF results | `./codeql_results` |
 
 ### Environment Variables
 
@@ -359,11 +367,13 @@ scanipy/
 │       ├── models.py       # GitHub-specific models
 │       └── search.py       # Search strategies and utilities
 ├── tools/
-│   └── semgrep/
-│       ├── semgrep_runner.py  # Semgrep integration
-│       └── rules/
-│           └── tarslip.yaml   # Built-in security rules
-├── tests/                  # Comprehensive test suite (233 tests, 100% coverage)
+│   ├── semgrep/
+│   │   ├── semgrep_runner.py  # Semgrep integration
+│   │   └── rules/
+│   │       └── tarslip.yaml   # Built-in security rules
+│   └── codeql/
+│       └── codeql_runner.py   # CodeQL integration
+├── tests/                  # Comprehensive test suite (333 tests, 100% coverage)
 ├── scripts/
 │   ├── pre-commit          # Git pre-commit hook
 │   └── setup-hooks.sh      # Hook installation script
