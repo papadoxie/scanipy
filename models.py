@@ -89,3 +89,15 @@ class SemgrepConfig:
     use_pro: bool = False
     db_path: str | None = None
     resume: bool = False
+
+
+@dataclass
+class CodeQLConfig:
+    """Configuration for CodeQL analysis."""
+
+    enabled: bool = False
+    query_suite: str | None = None
+    clone_dir: str | None = None
+    keep_cloned: bool = False
+    output_format: str = "sarif-latest"
+    output_dir: str | None = None
