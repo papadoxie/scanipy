@@ -1,5 +1,7 @@
 """Tests for the GitHub API client classes."""
 
+from __future__ import annotations
+
 import os
 from collections import defaultdict
 from unittest.mock import MagicMock, patch

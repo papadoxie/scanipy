@@ -424,6 +424,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory to save SARIF results (default: ./codeql_results)",
     )
+    codeql_group.add_argument(
+        "--codeql-results-db",
+        default=None,
+        help="Path to SQLite database for storing analysis results (enables resume)",
+    )
+    codeql_group.add_argument(
+        "--codeql-resume",
+        action="store_true",
+        help="Resume previous CodeQL analysis from database (requires --codeql-results-db)",
+    )
 
     return parser
 
@@ -472,6 +482,8 @@ def build_configs_from_args(
         keep_cloned=args.keep_cloned,
         output_format=args.codeql_format,
         output_dir=args.codeql_output_dir,
+        db_path=args.codeql_results_db,
+        resume=args.codeql_resume,
     )
 
     # Resolve GitHub token
@@ -530,6 +542,7 @@ def run_codeql_analysis(
     repos: list[dict[str, Any]],
     config: CodeQLConfig,
     language: str = "",
+    query: str = "",
 ) -> None:
     """
     Run CodeQL analysis on the provided repositories.
@@ -538,6 +551,7 @@ def run_codeql_analysis(
         repos: List of repository dictionaries
         config: CodeQL configuration
         language: Programming language for analysis
+        query: Search query used to find repositories
     """
     analyze_repositories_with_codeql(
         repo_list=repos,
@@ -548,6 +562,9 @@ def run_codeql_analysis(
         query_suite=config.query_suite,
         output_format=config.output_format,
         output_dir=config.output_dir,
+        db_path=config.db_path,
+        resume=config.resume,
+        query=query,
     )
 
 
@@ -661,7 +678,9 @@ def main() -> int:
                     f"for CodeQL analysis.{Colors.RESET}"
                 )
                 return 1
-            run_codeql_analysis(repos, codeql_config, language=search_config.language)
+            run_codeql_analysis(
+                repos, codeql_config, language=search_config.language, query=search_config.query
+            )
     else:
         Display.print_results(repos, search_config.query, sort_order=sort_order)
         Display.print_no_results_hint(bool(search_config.keywords))

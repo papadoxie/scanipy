@@ -1,5 +1,7 @@
 """Tests for the models module."""
 
+from __future__ import annotations
+
 from models import (
     DEFAULT_MAX_PAGES,
     DEFAULT_OUTPUT_FILE,

@@ -62,6 +62,8 @@ scanipy --query QUERY [OPTIONS]
 | `--codeql-queries` | CodeQL query suite or path | Default suite |
 | `--codeql-format` | CodeQL output format (`sarif-latest`, `csv`, `text`) | `sarif-latest` |
 | `--codeql-output-dir` | Directory to save SARIF results | `./codeql_results` |
+| `--codeql-results-db` | SQLite database for storing analysis results | None |
+| `--codeql-resume` | Resume previous CodeQL analysis | False |
 
 ## Shared Analysis Options
 

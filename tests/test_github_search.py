@@ -1,5 +1,7 @@
 """Tests for the GitHub search module."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 from integrations.github.search import (

@@ -14,6 +14,7 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 - **Keyword Filtering**: Filter results by keywords found in file contents
 - **Semgrep Integration**: Automatically clone and scan repositories with Semgrep
 - **CodeQL Integration**: Run CodeQL analysis for deep semantic security scanning
+- **Resume Capability**: Resume interrupted analysis from where it left off (Semgrep & CodeQL)
 - **Custom Rules**: Use built-in security rules or provide your own
 
 

@@ -1,5 +1,7 @@
 """Tests for the GitHub integration models module."""
 
+from __future__ import annotations
+
 import pytest
 
 from integrations.github.models import (

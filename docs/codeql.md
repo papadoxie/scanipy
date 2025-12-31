@@ -108,6 +108,97 @@ scanipy --query "extractall" --language python --run-codeql \
   --keep-cloned --clone-dir ./repos
 ```
 
+## Resume Capability
+
+CodeQL analysis can be interrupted and resumed from where it left off. This is useful for long-running analyses that may be interrupted by network issues, Ctrl+C, or system restarts.
+
+### Basic Resume
+
+```bash
+# Start analysis with a results database
+scanipy --query "extractall" --language python --run-codeql \
+  --codeql-results-db codeql_analysis.db
+
+# If interrupted, resume from the same session
+scanipy --query "extractall" --language python --run-codeql \
+  --codeql-results-db codeql_analysis.db --codeql-resume
+```
+
+### How It Works
+
+1. **Session Tracking**: Each analysis run creates a session tracked by query, language, and query suite
+2. **Incremental Saves**: Results are saved to SQLite after analyzing each repository
+3. **Smart Resume**: Already-analyzed repositories are automatically skipped
+4. **Survives Interruptions**: Analysis can survive Ctrl+C, network errors, or system crashes
+
+### Example Workflow
+
+```bash
+# Day 1: Start analyzing 100 repositories
+scanipy --query "path traversal" --language python --run-codeql \
+  --codeql-results-db path_traversal.db --pages 10
+
+# Analysis interrupted after 40 repos...
+# Ctrl+C
+
+# Day 2: Resume analysis (skips first 40 repos)
+scanipy --query "path traversal" --language python --run-codeql \
+  --codeql-results-db path_traversal.db --codeql-resume
+
+# Continue where you left off - remaining 60 repos analyzed
+```
+
+### Session Matching
+
+Resume works by matching:
+- **Query**: The search query used
+- **Language**: The programming language
+- **Query Suite**: The CodeQL query suite (if specified)
+
+If any of these change, a new session is created:
+
+```bash
+# Creates session 1
+scanipy --query "pickle.loads" --language python --run-codeql \
+  --codeql-results-db analysis.db
+
+# Creates session 2 (different query)
+scanipy --query "eval" --language python --run-codeql \
+  --codeql-results-db analysis.db
+
+# Creates session 3 (different query suite)
+scanipy --query "pickle.loads" --language python --run-codeql \
+  --codeql-results-db analysis.db --codeql-queries "security-extended"
+```
+
+### Viewing Results
+
+The database stores:
+- Repository names and URLs
+- Success/failure status
+- Error messages (for failures)
+- SARIF file paths (for successes)
+- Analysis timestamps
+
+You can query the database directly using SQLite:
+
+```bash
+sqlite3 codeql_analysis.db "SELECT repo_name, success FROM codeql_results"
+```
+
+### Best Practices
+
+1. **Use Descriptive Database Names**: Name databases after the vulnerability or pattern you're searching for
+   ```bash
+   --codeql-results-db sql_injection_scan.db
+   ```
+
+2. **Always Use Resume Flag**: When continuing analysis, always specify `--codeql-resume`
+
+3. **Match Parameters**: Ensure query, language, and query suite match the original analysis
+
+4. **Check Session Info**: The tool prints session information showing how many repos were already analyzed
+
 ## Performance Tips
 
 ### Use Specific Queries
@@ -139,6 +230,8 @@ scanipy --query "extractall" --language python --run-codeql --pages 1
 | `--codeql-queries` | Query suite or path | Default suite |
 | `--codeql-format` | Output format (sarif-latest, csv, text) | `sarif-latest` |
 | `--codeql-output-dir` | Directory to save SARIF results | `./codeql_results` |
+| `--codeql-results-db` | Path to SQLite database for results | None |
+| `--codeql-resume` | Resume from previous session | False |
 | `--clone-dir` | Directory for cloned repos | Temp dir |
 | `--keep-cloned` | Keep repos after analysis | False |
 
