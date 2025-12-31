@@ -687,3 +687,319 @@ class TestCodeQLConfigIntegration:
         assert codeql_config.enabled is True
         assert codeql_config.query_suite == "custom-queries"
         assert codeql_config.output_format == "csv"
+
+
+class TestCodeQLDatabaseResume:
+    """Tests for CodeQL resume functionality with database."""
+
+    def test_creates_new_session_without_resume(self):
+        """Test creates new session when resume not specified."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner._run_codeql_analysis") as mock_analyze,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (True, "success")
+            mock_analyze.return_value = (True, '{"runs": []}')
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.create_session.return_value = 1
+            mock_db.get_analyzed_repos.return_value = set()
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                resume=False,
+                query="test query",
+            )
+
+            mock_db.create_session.assert_called_once()
+            mock_db.find_session.assert_not_called()
+
+    def test_finds_existing_session_with_resume(self):
+        """Test finds existing session when resume specified."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner._run_codeql_analysis") as mock_analyze,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (True, "success")
+            mock_analyze.return_value = (True, '{"runs": []}')
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.find_session.return_value = 1
+            mock_db.get_analyzed_repos.return_value = set()
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                resume=True,
+                query="test query",
+            )
+
+            mock_db.find_session.assert_called_once()
+
+    def test_creates_new_session_if_none_found_with_resume(self):
+        """Test creates new session if none found with resume."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner._run_codeql_analysis") as mock_analyze,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (True, "success")
+            mock_analyze.return_value = (True, '{"runs": []}')
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.find_session.return_value = None
+            mock_db.create_session.return_value = 2
+            mock_db.get_analyzed_repos.return_value = set()
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                resume=True,
+                query="test query",
+            )
+
+            mock_db.find_session.assert_called_once()
+            mock_db.create_session.assert_called_once()
+
+    def test_skips_already_analyzed_repos(self):
+        """Test skips repositories that are already analyzed."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner._run_codeql_analysis") as mock_analyze,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (True, "success")
+            mock_analyze.return_value = (True, '{"runs": []}')
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.find_session.return_value = 1
+            mock_db.get_analyzed_repos.return_value = {"repo1", "repo2"}
+
+            repos = [
+                {"url": "https://github.com/test/repo1", "name": "repo1"},
+                {"url": "https://github.com/test/repo2", "name": "repo2"},
+                {"url": "https://github.com/test/repo3", "name": "repo3"},
+            ]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                resume=True,
+                query="test query",
+            )
+
+            # Should only clone repo3, not repo1 or repo2
+            assert mock_clone.call_count == 1
+
+    def test_saves_successful_analysis_to_database(self):
+        """Test saves successful analysis results to database."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner._run_codeql_analysis") as mock_analyze,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (True, "success")
+            mock_analyze.return_value = (True, '{"runs": []}')
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.create_session.return_value = 1
+            mock_db.get_analyzed_repos.return_value = set()
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                query="test query",
+            )
+
+            # Should save the result
+            mock_db.save_result.assert_called_once()
+            call_args = mock_db.save_result.call_args[1]
+            assert call_args["session_id"] == 1
+            assert call_args["repo_name"] == "test"
+            assert call_args["success"] is True
+
+    def test_saves_clone_failure_to_database(self):
+        """Test saves clone failure to database."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = False
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.create_session.return_value = 1
+            mock_db.get_analyzed_repos.return_value = set()
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                query="test query",
+            )
+
+            mock_db.save_result.assert_called_once()
+            call_args = mock_db.save_result.call_args[1]
+            assert call_args["success"] is False
+            assert "clone" in call_args["output"].lower()
+
+    def test_saves_database_creation_failure_to_database(self):
+        """Test saves database creation failure to database."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (False, "DB creation failed")
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.create_session.return_value = 1
+            mock_db.get_analyzed_repos.return_value = set()
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                query="test query",
+            )
+
+            mock_db.save_result.assert_called_once()
+            call_args = mock_db.save_result.call_args[1]
+            assert call_args["success"] is False
+            assert "Database creation failed" in call_args["output"]
+
+    def test_saves_analysis_failure_to_database(self):
+        """Test saves analysis failure to database."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner._run_codeql_analysis") as mock_analyze,
+            patch("tools.codeql.codeql_runner.CodeQLResultsDatabase") as mock_db_class,
+            tempfile.TemporaryDirectory() as tmpdir,
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (True, "success")
+            mock_analyze.return_value = (False, "Analysis failed")
+
+            mock_db = MagicMock()
+            mock_db_class.return_value = mock_db
+            mock_db.create_session.return_value = 1
+            mock_db.get_analyzed_repos.return_value = set()
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+            db_path = Path(tmpdir) / "test.db"
+
+            analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+                db_path=str(db_path),
+                query="test query",
+            )
+
+            mock_db.save_result.assert_called_once()
+            call_args = mock_db.save_result.call_args[1]
+            assert call_args["success"] is False
+            assert "Analysis failed" in call_args["output"]
+
+    def test_works_without_database(self):
+        """Test analysis works without database (backward compatibility)."""
+        with (
+            patch("tools.codeql.codeql_runner._check_command_exists") as mock_check,
+            patch("tools.codeql.codeql_runner._clone_repository") as mock_clone,
+            patch("tools.codeql.codeql_runner._create_codeql_database") as mock_create_db,
+            patch("tools.codeql.codeql_runner._run_codeql_analysis") as mock_analyze,
+            patch("tempfile.mkdtemp") as mock_mkdtemp,
+            patch("shutil.rmtree"),
+        ):
+            mock_check.return_value = True
+            mock_clone.return_value = True
+            mock_create_db.return_value = (True, "success")
+            mock_analyze.return_value = (True, '{"runs": []}')
+            mock_mkdtemp.return_value = "/tmp/test"
+
+            repos = [{"url": "https://github.com/test/repo", "name": "test"}]
+
+            # Should work without db_path
+            result = analyze_repositories_with_codeql(
+                repos,
+                MockColors(),
+                language="python",
+            )
+
+            assert len(result) == 1
+            assert result[0]["success"] is True

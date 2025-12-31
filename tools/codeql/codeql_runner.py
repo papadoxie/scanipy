@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .results_db import CodeQLResultsDatabase
+
 # Mapping of common languages to CodeQL language identifiers
 LANGUAGE_MAP: dict[str, str] = {
     "python": "python",
@@ -165,6 +167,9 @@ def analyze_repositories_with_codeql(
     query_suite: str | None = None,
     output_format: str = "sarif-latest",
     output_dir: str | None = None,
+    db_path: str | None = None,
+    resume: bool = False,
+    query: str = "",
 ) -> list[dict[str, Any]]:
     """Clone repositories and run CodeQL analysis on the first ten entries.
 
@@ -177,6 +182,9 @@ def analyze_repositories_with_codeql(
         query_suite: Custom query suite or path to queries
         output_format: Output format for results
         output_dir: Directory to save SARIF results (default: ./codeql_results)
+        db_path: Path to SQLite database for storing results
+        resume: Whether to resume from previous session
+        query: The search query (used for session tracking)
 
     Returns:
         List of analysis result dictionaries
@@ -203,6 +211,28 @@ def analyze_repositories_with_codeql(
             f"{colors.RESET}"
         )
         return []
+
+    # Initialize database if provided
+    database: CodeQLResultsDatabase | None = None
+    session_id: int | None = None
+    analyzed_repos: set[str] = set()
+
+    if db_path:
+        database = CodeQLResultsDatabase(db_path)
+        if resume:
+            # Try to find existing session
+            session_id = database.find_session(query, codeql_language, query_suite)
+            if session_id:
+                analyzed_repos = database.get_analyzed_repos(session_id)
+                stats = database.get_session_stats(session_id)
+                print(
+                    f"{colors.INFO}📂 Resuming session {session_id} - "
+                    f"{stats['total']} repos already analyzed{colors.RESET}"
+                )
+        if session_id is None:
+            # Create new session
+            session_id = database.create_session(query, codeql_language, query_suite, output_format)
+            print(f"{colors.INFO}📂 Created new analysis session {session_id}{colors.RESET}")
 
     using_temp_dir = clone_dir is None
     actual_clone_dir: str
@@ -238,6 +268,16 @@ def analyze_repositories_with_codeql(
             continue
 
         repo_name = repo.get("name", f"repo_{index}")
+
+        # Skip if already analyzed in this session
+        if repo_name in analyzed_repos:
+            print(
+                f"\n{colors.INFO}[{index}/{len(repos_to_analyze)}] Skipping "
+                f"{colors.REPO_NAME}{repo_name}{colors.RESET} "
+                f"{colors.WARNING}(already analyzed in this session){colors.RESET}"
+            )
+            continue
+
         repo_dir = Path(actual_clone_dir) / repo_name.replace("/", "_")
         clone_path = str(repo_dir)
         db_path = str(repo_dir / "codeql-db")
@@ -283,14 +323,47 @@ def analyze_repositories_with_codeql(
                         "output": output,
                         "sarif_file": sarif_path,
                     }
+
+                    # Save to database if available
+                    if database and session_id:
+                        database.save_result(
+                            session_id=session_id,
+                            repo_name=repo_name,
+                            repo_url=repo_url,
+                            success=True,
+                            output=output,
+                            sarif_path=sarif_path,
+                        )
                 else:
                     print(f"{colors.ERROR}❌ CodeQL analysis failed{colors.RESET}")
                     print(f"{colors.ERROR}{output}{colors.RESET}")
                     result = {"repo": repo_name, "success": success, "output": output}
+
+                    # Save failure to database if available
+                    if database and session_id:
+                        database.save_result(
+                            session_id=session_id,
+                            repo_name=repo_name,
+                            repo_url=repo_url,
+                            success=False,
+                            output=output,
+                            sarif_path=None,
+                        )
             else:
                 print(f"{colors.ERROR}❌ Failed to create CodeQL database{colors.RESET}")
                 print(f"{colors.ERROR}{db_output}{colors.RESET}")
                 result = {"repo": repo_name, "success": False, "output": db_output}
+
+                # Save failure to database if available
+                if database and session_id:
+                    database.save_result(
+                        session_id=session_id,
+                        repo_name=repo_name,
+                        repo_url=repo_url,
+                        success=False,
+                        output=f"Database creation failed: {db_output}",
+                        sarif_path=None,
+                    )
 
             results.append(result)
         else:
@@ -300,6 +373,17 @@ def analyze_repositories_with_codeql(
                 "output": "Failed to clone repository",
             }
             results.append(result)
+
+            # Save clone failure to database if available
+            if database and session_id:
+                database.save_result(
+                    session_id=session_id,
+                    repo_name=repo_name,
+                    repo_url=repo_url,
+                    success=False,
+                    output="Failed to clone repository",
+                    sarif_path=None,
+                )
 
     if using_temp_dir and not keep_cloned:
         print(f"{colors.INFO}🧹 Cleaning up temporary directory...{colors.RESET}")

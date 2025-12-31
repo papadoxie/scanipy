@@ -101,3 +101,5 @@ class CodeQLConfig:
     keep_cloned: bool = False
     output_format: str = "sarif-latest"
     output_dir: str | None = None
+    db_path: str | None = None
+    resume: bool = False

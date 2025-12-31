@@ -120,7 +120,7 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["scanipy", "models", "integrations", "tools"]
-omit = ["tests/*", "*/__init__.py"]
+omit = ["tests/*", "*/__init__.py", "_version.py"]
 
 [tool.coverage.report]
 exclude_lines = [

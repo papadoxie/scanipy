@@ -1,5 +1,7 @@
 """Tests for the scanipy CLI module."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

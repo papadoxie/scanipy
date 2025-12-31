@@ -210,3 +210,58 @@ python scanipy.py --query "os/exec" --language go --run-codeql
 python scanipy.py --query "strcpy" --language c --run-codeql \
   --codeql-queries "cpp-security-extended"
 ```
+
+## Resuming Interrupted Analysis
+
+Both Semgrep and CodeQL support resuming interrupted analysis. This is useful for large scans that may be interrupted.
+
+### Resume Semgrep Analysis
+
+```bash
+# Start analysis with database tracking
+scanipy --query "SQL injection" --language python \
+  --run-semgrep --results-db sql_injection.db
+
+# If interrupted (Ctrl+C, network error, etc.)
+# Resume from where you left off
+scanipy --query "SQL injection" --language python \
+  --run-semgrep --results-db sql_injection.db --resume
+```
+
+### Resume CodeQL Analysis
+
+```bash
+# Start CodeQL analysis with database tracking
+scanipy --query "path traversal" --language python \
+  --run-codeql --codeql-results-db path_analysis.db
+
+# Resume interrupted analysis
+scanipy --query "path traversal" --language python \
+  --run-codeql --codeql-results-db path_analysis.db --codeql-resume
+```
+
+### Large-Scale Analysis Workflow
+
+For analyzing hundreds of repositories:
+
+```bash
+# Day 1: Start large scan (100+ repos)
+scanipy --query "unsafe deserialization" --language java \
+  --pages 10 --run-codeql --codeql-results-db deserialization_scan.db
+
+# Analysis interrupted after 40 repositories...
+
+# Day 2: Resume (skips first 40, continues with remaining)
+scanipy --query "unsafe deserialization" --language java \
+  --pages 10 --run-codeql --codeql-results-db deserialization_scan.db \
+  --codeql-resume
+
+# Completed: All 100 repositories analyzed
+```
+
+### Key Points
+
+- **Session Matching**: Resume works by matching query, language, and analysis parameters
+- **Automatic Skipping**: Already-analyzed repositories are automatically skipped
+- **Incremental Saves**: Results are saved after each repository
+- **Crash Recovery**: Analysis survives Ctrl+C, network errors, or system crashes
