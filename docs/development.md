@@ -144,8 +144,8 @@ Add documentation for your feature:
 # Create new doc page
 docs/new-feature.md
 
-# Update index
-docs/index.md
+# Update home page
+docs/home.md
 ```
 
 ### 6. Run All Checks
