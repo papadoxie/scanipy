@@ -16,6 +16,17 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 - **CodeQL Integration**: Run CodeQL analysis for deep semantic security scanning
 - **Custom Rules**: Use built-in security rules or provide your own
 
+
+## 🏆 Vulnerabilities Found
+
+This section showcases real-world vulnerabilities discovered using Scanipy:
+
+| CVE ID | Project | Vulnerability Type | Description | Reporter
+|--------|---------|--------------------|-------------|---------|
+| CVE-2025-61765 | [python-socketio](https://github.com/miguelgrinberg/python-socketio) | Unsafe Pickle Deserialization | Arbitrary Python code execution (RCE) through malicious pickle deserialization in certain multi-server deployments | [locus-x64](https://github.com/locus-x64)
+
+> **Found a vulnerability using Scanipy?** We'd love to hear about it! Open an issue or PR to add your finding to this list.
+
 ## ⚡ Quick Start
 
 ```bash
