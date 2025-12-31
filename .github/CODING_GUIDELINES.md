@@ -480,7 +480,7 @@ for tier in star_tiers:
 **Structure**:
 ```
 docs/
-├── index.md              # Home page
+├── home.md               # Home page
 ├── installation.md       # Setup instructions
 ├── usage.md             # Basic usage
 ├── semgrep.md           # Semgrep integration

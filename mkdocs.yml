@@ -31,7 +31,7 @@ theme:
     - content.code.annotate
 
 nav:
-  - Home: index.md
+  - Home: home.md
   - Getting Started:
     - Installation: installation.md
     - Usage Guide: usage.md
