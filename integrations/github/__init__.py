@@ -1,5 +1,7 @@
 """GitHub integration module for Scanipy."""
 
+from __future__ import annotations
+
 from .github import GraphQLAPI, RestAPI
 from .models import GitHubAPIError
 from .search import SearchStrategy, SortOrder, search_repositories

@@ -1,5 +1,7 @@
 """Tests for the Semgrep results database module."""
 
+from __future__ import annotations
+
 import json
 import sqlite3
 import tempfile

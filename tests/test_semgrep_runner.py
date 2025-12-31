@@ -1,5 +1,7 @@
 """Tests for the Semgrep runner module."""
 
+from __future__ import annotations
+
 import subprocess
 from unittest.mock import MagicMock, patch
 
