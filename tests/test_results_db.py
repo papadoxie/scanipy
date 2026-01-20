@@ -331,3 +331,23 @@ class TestResultsDatabase:
         # Verify status was updated
         sessions = db.get_all_sessions()
         assert sessions[0]["status"] == "completed"
+
+    def test_get_session(self, db):
+        """Test getting a session by ID."""
+        session_id = db.create_session("test query", rules_path="/rules.yaml", use_pro=True)
+
+        session = db.get_session(session_id)
+
+        assert session is not None
+        assert session["id"] == session_id
+        assert session["query"] == "test query"
+        assert session["rules_path"] == "/rules.yaml"
+        assert session["use_pro"] is True
+        assert "created_at" in session
+        assert "status" in session
+
+    def test_get_session_not_found(self, db):
+        """Test getting a non-existent session returns None."""
+        session = db.get_session(99999)
+
+        assert session is None

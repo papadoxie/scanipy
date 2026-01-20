@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -221,3 +222,50 @@ class TestResultsDatabasePostgreSQL:
         assert sessions[0]["status"] == "completed"
         assert sessions[0]["result_count"] == 5
         assert sessions[0]["success_count"] == 4
+
+    @patch("tools.semgrep.results_db.psycopg2")
+    def test_get_session_postgres(self, mock_psycopg2):
+        """Test get_session works with PostgreSQL."""
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = (
+            1,
+            "test query",
+            datetime.now(UTC),
+            "/rules.yaml",
+            True,
+            "pending",
+        )
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
+
+        db = ResultsDatabase(db_url="postgresql://user:pass@host/db")
+        session = db.get_session(1)
+
+        assert session is not None
+        assert session["id"] == 1
+        assert session["query"] == "test query"
+        assert session["rules_path"] == "/rules.yaml"
+        assert session["use_pro"] is True
+        assert session["status"] == "pending"
+        assert "created_at" in session
+
+    @patch("tools.semgrep.results_db.psycopg2")
+    def test_get_session_postgres_not_found(self, mock_psycopg2):
+        """Test get_session returns None when session doesn't exist in PostgreSQL."""
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = None
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
+
+        db = ResultsDatabase(db_url="postgresql://user:pass@host/db")
+        session = db.get_session(99999)
+
+        assert session is None

@@ -453,6 +453,29 @@ class TestAPIEndpoints:
         assert "session_id must be greater than 0" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
+    async def test_update_job_status_invalid_session_id_type(self, api_config, mock_db):
+        """Test update_job_status raises error when session_id cannot be converted to int."""
+        from services.api import api as api_module
+
+        init_api(api_config)
+
+        status_update = {
+            "session_id": "not-a-number",
+            "result": {
+                "repo": "owner/repo",
+                "url": "https://github.com/owner/repo",
+                "success": True,
+                "output": "No findings",
+            },
+        }
+
+        with pytest.raises(api_module.HTTPException) as exc_info:
+            await update_job_status("job-123", status_update)
+
+        assert exc_info.value.status_code == 400
+        assert "Invalid session_id value" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
     async def test_get_scan_status_with_k8s_jobs(self, api_config, mock_db):
         """Test get_scan_status includes job statuses when K8s client available."""
         from services.api import api as api_module
