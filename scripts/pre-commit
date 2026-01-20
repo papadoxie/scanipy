@@ -38,5 +38,20 @@ fi
 
 echo "✅ All tests passed!"
 echo "✅ Coverage check passed (≥99%)!"
+echo ""
+echo "Running typecheck..."
+
+# Run mypy and capture the exit code
+python -m mypy . --show-error-codes
+
+# Check if typecheck passed
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: Typecheck failed!"
+    echo "Please fix the type errors before committing."
+    exit 1
+fi
+
+echo "✅ Typecheck passed!"
 echo "✅ All pre-commit checks passed!"
 exit 0
