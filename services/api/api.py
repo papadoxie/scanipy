@@ -176,12 +176,16 @@ async def get_scan_status(session_id: int) -> ScanStatusResponse:
             detail="Database not initialized",
         )
 
-    results = db.get_session_results(session_id)
-    if not results:
+    # Check if session exists in analysis_sessions table
+    session = db.get_session(session_id)
+    if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {session_id} not found",
         )
+
+    # Get results (may be empty if workers haven't reported yet)
+    results = db.get_session_results(session_id)
 
     completed = sum(1 for r in results if r.get("success"))
     failed = len(results) - completed
@@ -205,8 +209,17 @@ async def get_scan_status(session_id: int) -> ScanStatusResponse:
                         )
                     )
                     # Check if job is still running
-                    job_status_str = job_status.get("status", "").lower()
-                    if job_status_str not in ("succeeded", "failed", "complete"):
+                    # get_job_status returns: name, active, succeeded, failed, conditions
+                    # A job is finished if succeeded > 0 or failed > 0
+                    # A job is still running if active > 0
+                    active = job_status.get("active", 0)
+                    succeeded = job_status.get("succeeded", 0)
+                    failed = job_status.get("failed", 0)
+
+                    # Job is finished if it has succeeded or failed pods
+                    # Job is still running if it has active pods
+                    is_finished = (succeeded > 0 or failed > 0) and active == 0
+                    if not is_finished:
                         all_jobs_finished = False
                 except Exception:
                     # If we can't get job status, the job might have been cleaned up
@@ -246,7 +259,7 @@ async def get_scan_results(session_id: int) -> list[dict[str, Any]]:
         session_id: Session ID
 
     Returns:
-        List of analysis results
+        List of analysis results (may be empty if workers haven't reported yet)
     """
     if not db:
         raise HTTPException(
@@ -254,14 +267,16 @@ async def get_scan_results(session_id: int) -> list[dict[str, Any]]:
             detail="Database not initialized",
         )
 
-    results = db.get_session_results(session_id)
-    if not results:
+    # Check if session exists in analysis_sessions table
+    session = db.get_session(session_id)
+    if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {session_id} not found",
         )
 
-    return results
+    # Get results (may be empty if workers haven't reported yet)
+    return db.get_session_results(session_id)
 
 
 @app.post("/api/v1/scans/{session_id}/repos")
@@ -297,8 +312,7 @@ async def add_repos_to_scan(
         )
 
     # Get session info to determine rules_path and use_pro
-    sessions = db.get_all_sessions()
-    session_info = next((s for s in sessions if s["id"] == session_id), None)
+    session_info = db.get_session(session_id)
     if not session_info:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

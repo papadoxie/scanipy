@@ -487,6 +487,60 @@ class ResultsDatabase:
                     for row in cursor.fetchall()
                 ]
 
+    def get_session(self, session_id: int) -> dict[str, Any] | None:
+        """Get a session by ID.
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            Session dictionary or None if not found
+        """
+        if self.is_postgres:
+            assert self.db_url is not None
+            with psycopg2.connect(self.db_url) as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                        SELECT id, query, created_at, rules_path, use_pro, status
+                        FROM analysis_sessions
+                        WHERE id = %s
+                        """,
+                    (session_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                return {
+                    "id": row[0],
+                    "query": row[1],
+                    "created_at": row[2].isoformat() if row[2] else None,
+                    "rules_path": row[3],
+                    "use_pro": bool(row[4]),
+                    "status": row[5],
+                }
+        else:
+            assert self.db_path is not None
+            with sqlite3.connect(self.db_path) as sqlite_conn:
+                cursor = sqlite_conn.execute(
+                    """
+                    SELECT id, query, created_at, rules_path, use_pro, status
+                    FROM analysis_sessions
+                    WHERE id = ?
+                    """,
+                    (session_id,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return {
+                    "id": row[0],
+                    "query": row[1],
+                    "created_at": row[2],
+                    "rules_path": row[3],
+                    "use_pro": bool(row[4]),
+                    "status": row[5],
+                }
+
     def export_session_to_json(self, session_id: int) -> str:
         """Export a session's results to JSON.
 

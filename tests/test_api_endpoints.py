@@ -29,6 +29,7 @@ class TestAPIEndpoints:
             mock_db.get_session_results.return_value = []
             mock_db.get_all_sessions.return_value = []
             mock_db.get_analyzed_repos.return_value = set()
+            mock_db.get_session.return_value = None  # Default: session not found
             mock_db_class.return_value = mock_db
             yield mock_db
 
@@ -114,6 +115,11 @@ class TestAPIEndpoints:
         if api_module.ScanStatusResponse is None:
             pytest.skip("FastAPI not available")
 
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test query",
+            "status": "running",
+        }
         mock_db.get_session_results.return_value = [
             {"repo": "owner/repo1", "success": True},
             {"repo": "owner/repo2", "success": False},
@@ -135,13 +141,39 @@ class TestAPIEndpoints:
         """Test get_scan_status raises 404 when session not found."""
         from services.api import api as api_module
 
-        mock_db.get_session_results.return_value = []
+        mock_db.get_session.return_value = None  # Session doesn't exist
         init_api(api_config)
 
         with pytest.raises(api_module.HTTPException) as exc_info:
             await api_module.get_scan_status(999)
 
         assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_scan_status_empty_results(self, api_config, mock_db):
+        """Test get_scan_status returns proper response when session exists but no results."""
+        from services.api import api as api_module
+
+        if api_module.ScanStatusResponse is None:
+            pytest.skip("FastAPI not available")
+
+        # Session exists but no results yet (workers haven't reported)
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test query",
+            "status": "pending",
+        }
+        mock_db.get_session_results.return_value = []  # No results yet
+        init_api(api_config)
+
+        result = await api_module.get_scan_status(1)
+
+        # Should return proper response, not 404
+        assert result.session_id == 1
+        assert result.total_repos == 0
+        assert result.completed_repos == 0
+        assert result.failed_repos == 0
+        assert result.status == "running"  # Status should be "running" when no results yet
 
     @pytest.mark.asyncio
     async def test_get_scan_status_without_db(self, api_config):
@@ -161,6 +193,11 @@ class TestAPIEndpoints:
         """Test get_scan_results endpoint."""
         from services.api import api as api_module
 
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test query",
+            "status": "running",
+        }
         mock_db.get_session_results.return_value = [
             {"repo": "owner/repo1", "success": True, "output": "No findings"},
         ]
@@ -186,16 +223,33 @@ class TestAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_scan_results_not_found(self, api_config, mock_db):
-        """Test get_scan_results raises 404 when session has no results."""
+        """Test get_scan_results raises 404 when session doesn't exist."""
         from services.api import api as api_module
 
-        mock_db.get_session_results.return_value = []
+        mock_db.get_session.return_value = None  # Session doesn't exist
         init_api(api_config)
 
         with pytest.raises(api_module.HTTPException) as exc_info:
             await api_module.get_scan_results(999)
 
         assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_scan_results_empty_results(self, api_config, mock_db):
+        """Test get_scan_results returns empty list when session exists but has no results."""
+        from services.api import api as api_module
+
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test query",
+            "status": "pending",
+        }
+        mock_db.get_session_results.return_value = []  # No results yet
+        init_api(api_config)
+
+        results = await api_module.get_scan_results(1)
+
+        assert results == []  # Should return empty list, not 404
 
     @pytest.mark.asyncio
     async def test_add_repos_to_scan(self, api_config, mock_db):
@@ -205,9 +259,12 @@ class TestAPIEndpoints:
         if api_module.AddReposRequest is None:
             pytest.skip("FastAPI not available")
 
-        mock_db.get_all_sessions.return_value = [
-            {"id": 1, "query": "test", "rules_path": "/rules.yaml", "use_pro": False}
-        ]
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test",
+            "rules_path": "/rules.yaml",
+            "use_pro": False,
+        }
         mock_k8s_client = MagicMock()
         mock_k8s_client.create_job.return_value = ("job-1", "job-id-1")
         init_api(api_config)
@@ -233,7 +290,7 @@ class TestAPIEndpoints:
         if api_module.AddReposRequest is None:
             pytest.skip("FastAPI not available")
 
-        mock_db.get_all_sessions.return_value = [{"id": 1, "query": "test"}]
+        mock_db.get_session.return_value = {"id": 1, "query": "test"}
         init_api(api_config)
         api_module.k8s_client = None
 
@@ -403,13 +460,21 @@ class TestAPIEndpoints:
         if api_module.ScanStatusResponse is None:
             pytest.skip("FastAPI not available")
 
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test query",
+            "status": "running",
+        }
         mock_db.get_session_results.return_value = [
             {"repo": "owner/repo1", "success": True, "k8s_job_id": "job-1"},
         ]
         mock_k8s_client = MagicMock()
         mock_k8s_client.get_job_status.return_value = {
             "name": "job-1",
+            "active": 0,
             "succeeded": 1,
+            "failed": 0,
+            "conditions": [],
         }
         init_api(api_config)
         api_module.k8s_client = mock_k8s_client
@@ -428,6 +493,11 @@ class TestAPIEndpoints:
         if api_module.ScanStatusResponse is None:
             pytest.skip("FastAPI not available")
 
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test query",
+            "status": "running",
+        }
         mock_db.get_session_results.return_value = [
             {"repo": "owner/repo1", "success": True, "k8s_job_id": "job-1"},
         ]
@@ -443,6 +513,70 @@ class TestAPIEndpoints:
         assert len(result.jobs) == 0
 
     @pytest.mark.asyncio
+    async def test_get_scan_status_job_completion_logic(self, api_config, mock_db):
+        """Test get_scan_status correctly determines job completion from job status."""
+        from services.api import api as api_module
+
+        if api_module.ScanStatusResponse is None:
+            pytest.skip("FastAPI not available")
+
+        mock_db.get_session.return_value = {
+            "id": 1,
+            "query": "test query",
+            "status": "running",
+        }
+        # Test case 1: Job with succeeded=1, active=0 should be considered finished
+        mock_db.get_session_results.return_value = [
+            {"repo": "owner/repo1", "success": True, "k8s_job_id": "job-1"},
+        ]
+        mock_k8s_client = MagicMock()
+        mock_k8s_client.get_job_status.return_value = {
+            "name": "job-1",
+            "active": 0,
+            "succeeded": 1,
+            "failed": 0,
+            "conditions": [],
+        }
+        init_api(api_config)
+        api_module.k8s_client = mock_k8s_client
+
+        result = await api_module.get_scan_status(1)
+        assert result.status == "completed"
+
+        # Test case 2: Job with failed=1, active=0 should be considered finished
+        mock_k8s_client.get_job_status.return_value = {
+            "name": "job-1",
+            "active": 0,
+            "succeeded": 0,
+            "failed": 1,
+            "conditions": [],
+        }
+        result = await api_module.get_scan_status(1)
+        assert result.status == "completed"
+
+        # Test case 3: Job with active=1 should be considered running
+        mock_k8s_client.get_job_status.return_value = {
+            "name": "job-1",
+            "active": 1,
+            "succeeded": 0,
+            "failed": 0,
+            "conditions": [],
+        }
+        result = await api_module.get_scan_status(1)
+        assert result.status == "running"
+
+        # Test case 4: Job with all zeros (pending/unknown) should be considered running
+        mock_k8s_client.get_job_status.return_value = {
+            "name": "job-1",
+            "active": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "conditions": [],
+        }
+        result = await api_module.get_scan_status(1)
+        assert result.status == "running"
+
+    @pytest.mark.asyncio
     async def test_add_repos_to_scan_missing_session(self, api_config, mock_db):
         """Test add_repos_to_scan raises 404 when session not found."""
         from services.api import api as api_module
@@ -450,7 +584,7 @@ class TestAPIEndpoints:
         if api_module.AddReposRequest is None:
             pytest.skip("FastAPI not available")
 
-        mock_db.get_all_sessions.return_value = []
+        mock_db.get_session.return_value = None
         mock_k8s_client = MagicMock()
         init_api(api_config)
         api_module.k8s_client = mock_k8s_client
@@ -472,7 +606,7 @@ class TestAPIEndpoints:
         if api_module.AddReposRequest is None:
             pytest.skip("FastAPI not available")
 
-        mock_db.get_all_sessions.return_value = [{"id": 1, "query": "test"}]
+        mock_db.get_session.return_value = {"id": 1, "query": "test"}
         mock_k8s_client = MagicMock()
         init_api(api_config)
         api_module.k8s_client = mock_k8s_client
@@ -495,7 +629,7 @@ class TestAPIEndpoints:
         if api_module.AddReposRequest is None:
             pytest.skip("FastAPI not available")
 
-        mock_db.get_all_sessions.return_value = [{"id": 1, "query": "test"}]
+        mock_db.get_session.return_value = {"id": 1, "query": "test"}
         mock_k8s_client = MagicMock()
         mock_k8s_client.create_job.return_value = ("test-job", "test-job-id")
         init_api(api_config)
@@ -523,7 +657,7 @@ class TestAPIEndpoints:
         if api_module.AddReposRequest is None:
             pytest.skip("FastAPI not available")
 
-        mock_db.get_all_sessions.return_value = [{"id": 1, "query": "test"}]
+        mock_db.get_session.return_value = {"id": 1, "query": "test"}
         mock_db.get_analyzed_repos.return_value = {"owner/repo1"}
         mock_k8s_client = MagicMock()
         mock_k8s_client.create_job.return_value = ("test-job", "test-job-id")
@@ -552,7 +686,7 @@ class TestAPIEndpoints:
         if api_module.AddReposRequest is None:
             pytest.skip("FastAPI not available")
 
-        mock_db.get_all_sessions.return_value = [{"id": 1, "query": "test"}]
+        mock_db.get_session.return_value = {"id": 1, "query": "test"}
         mock_k8s_client = MagicMock()
         mock_k8s_client.create_job.side_effect = Exception("Failed to create job")
         init_api(api_config)
