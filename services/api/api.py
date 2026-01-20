@@ -2,47 +2,59 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     from fastapi import FastAPI, HTTPException, status
     from fastapi.responses import JSONResponse
     from pydantic import BaseModel
-except ImportError:
-    FastAPI = None  # type: ignore[assignment,misc]
-    HTTPException = None  # type: ignore[assignment,misc]
-    status = None  # type: ignore[assignment]
-    JSONResponse = None  # type: ignore[assignment,misc]
-    BaseModel = None  # type: ignore[assignment,misc]
+else:
+    try:
+        from fastapi import FastAPI, HTTPException, status
+        from fastapi.responses import JSONResponse
+        from pydantic import BaseModel
+    except ImportError:
+        FastAPI = None  # type: ignore[assignment, misc]
+        HTTPException = None  # type: ignore[assignment, misc]
+        status = None  # type: ignore[assignment, misc]
+        JSONResponse = None  # type: ignore[assignment, misc]
+        BaseModel = None  # type: ignore[assignment, misc]
 
 from tools.semgrep.results_db import ResultsDatabase
 
 from .config import APIConfig
 from .kubernetes_client import KubernetesClient
 
+
 # Pydantic models for request/response (only define if BaseModel is available)
-if BaseModel:
-    # Type ignore needed because BaseModel might be None at type-check time
-    class CreateScanRequest(BaseModel):  # type: ignore[misc]
+# Use a function to prevent mypy from statically analyzing the condition
+def _check_base_model() -> bool:
+    """Check if BaseModel is available at runtime."""
+    return BaseModel is not None  # type: ignore[comparison-overlap, unused-ignore]
+
+
+if _check_base_model():
+
+    class CreateScanRequest(BaseModel):
         """Request to create a new scan session."""
 
         query: str
         rules_path: str | None = None
         use_pro: bool = False
 
-    class AddReposRequest(BaseModel):  # type: ignore[misc]
+    class AddReposRequest(BaseModel):
         """Request to add repositories to a scan session."""
 
         repos: list[dict[str, Any]]  # List of repo dicts with 'name' and 'url'
 
-    class JobStatusResponse(BaseModel):  # type: ignore[misc]
+    class JobStatusResponse(BaseModel):
         """Response for job status."""
 
         job_id: str
         job_name: str
         status: dict[str, Any]
 
-    class ScanStatusResponse(BaseModel):  # type: ignore[misc]
+    class ScanStatusResponse(BaseModel):
         """Response for scan session status."""
 
         session_id: int
@@ -51,16 +63,25 @@ if BaseModel:
         completed_repos: int
         failed_repos: int
         jobs: list[JobStatusResponse]
-else:
+
+
+if not _check_base_model():
     # Placeholder classes when FastAPI is not available
-    CreateScanRequest = None  # type: ignore[assignment,misc]
-    AddReposRequest = None  # type: ignore[assignment,misc]
-    JobStatusResponse = None  # type: ignore[assignment,misc]
-    ScanStatusResponse = None  # type: ignore[assignment,misc]
+    # These are intentionally None when FastAPI is not installed
+    CreateScanRequest: Any = None  # type: ignore[no-redef]
+    AddReposRequest: Any = None  # type: ignore[no-redef]
+    JobStatusResponse: Any = None  # type: ignore[no-redef]
+    ScanStatusResponse: Any = None  # type: ignore[no-redef]
 
 
 # Initialize FastAPI app
-if FastAPI:
+# Use a function to prevent mypy from statically analyzing the condition
+def _check_fastapi() -> bool:
+    """Check if FastAPI is available at runtime."""
+    return FastAPI is not None  # type: ignore[comparison-overlap, unused-ignore]
+
+
+if _check_fastapi():
     app = FastAPI(title="Scanipy Semgrep API", version="1.0.0")
 else:
     # Create a dummy app object with no-op decorators when FastAPI is not available
@@ -75,7 +96,7 @@ else:
             """No-op get decorator."""
             return lambda func: func
 
-    app = DummyApp()  # type: ignore[assignment,misc]
+    app: Any = DummyApp()  # type: ignore[no-redef]
 
 
 # Global state (would use dependency injection in production)

@@ -81,3 +81,7 @@ boto3>=1.28.0  # AWS S3 support for storing analysis results
 kubernetes>=28.0.0  # Kubernetes client for containerized execution
 fastapi>=0.100.0  # FastAPI for API service
 pytest-asyncio>=0.21.0  # Async test support (dev dependency)
+
+# Type stubs for optional dependencies (for mypy type checking)
+types-colorama>=0.4.15  # Type stubs for colorama
+types-psycopg2>=2.9.21  # Type stubs for psycopg2

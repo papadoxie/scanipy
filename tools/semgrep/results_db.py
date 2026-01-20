@@ -11,16 +11,21 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from psycopg2.extensions import connection as pg_connection_type
+else:
+    pg_connection_type = Any
 
 try:
     import psycopg2
     from psycopg2 import sql
     from psycopg2.extensions import connection as pg_connection
 except ImportError:
-    psycopg2 = None
-    sql = None
-    pg_connection = None
+    psycopg2 = None  # type: ignore[assignment]
+    sql = None  # type: ignore[assignment]
+    pg_connection = None  # type: ignore[assignment, misc]
 
 
 @dataclass
@@ -193,9 +198,12 @@ class ResultsDatabase:
                         """,
                         (query, datetime.now(UTC), rules_path, use_pro, k8s_job_id),
                     )
-                    session_id = cur.fetchone()[0]
+                    row = cur.fetchone()
+                    if row is None:
+                        raise RuntimeError("Failed to create session - no ID returned")
+                    session_id = row[0]
                 conn.commit()
-                return session_id
+                return int(session_id)
         else:
             assert self.db_path is not None
             with sqlite3.connect(self.db_path) as conn:
@@ -235,8 +243,8 @@ class ResultsDatabase:
                 return row[0] if row else None
         else:
             assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
+            with sqlite3.connect(self.db_path) as sqlite_conn:
+                cursor = sqlite_conn.execute(
                     """
                     SELECT id FROM analysis_sessions
                     WHERE query = ?
@@ -345,8 +353,8 @@ class ResultsDatabase:
                 return {row[0] for row in cur.fetchall()}
         else:
             assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
+            with sqlite3.connect(self.db_path) as sqlite_conn:
+                cursor = sqlite_conn.execute(
                     """
                     SELECT repo_name FROM analysis_results
                     WHERE session_id = ?
@@ -453,8 +461,8 @@ class ResultsDatabase:
                 ]
         else:
             assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
+            with sqlite3.connect(self.db_path) as sqlite_conn:
+                cursor = sqlite_conn.execute(
                     """
                     SELECT s.id, s.query, s.created_at, s.rules_path, s.use_pro, s.status,
                            COUNT(r.id) as result_count,

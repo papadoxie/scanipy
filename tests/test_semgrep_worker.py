@@ -221,7 +221,7 @@ class TestUploadToS3:
         """Test upload_to_s3 handles unexpected exceptions."""
         # Ensure ClientError is available (not None)
         try:
-            from botocore.exceptions import ClientError
+            from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 
             # Ensure ClientError is available in worker module
             import tools.semgrep.worker.worker as worker_module

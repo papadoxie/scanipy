@@ -52,6 +52,8 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.8.0",
     "types-requests>=2.31.0",
+    "types-colorama>=0.4.15",
+    "types-psycopg2>=2.9.21",
 ]
 container = [
     "psycopg2-binary>=2.9.0",
@@ -278,3 +280,11 @@ show_error_codes = true
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "services.api.kubernetes_client",
+    "tools.semgrep.worker.worker",
+]
+warn_unused_ignores = false

@@ -13,7 +13,7 @@ from tools.codeql.results_db import CodeQLAnalysisResult, CodeQLResultsDatabase
 
 
 @pytest.fixture
-def temp_db_path() -> Path:
+def temp_db_path() -> Path:  # type: ignore[misc]
     """Create a temporary database path."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir) / "test_codeql.db"

@@ -19,11 +19,11 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import boto3
-    from botocore.exceptions import ClientError
+    import boto3  # type: ignore[import-untyped]
+    from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 except ImportError:
-    boto3 = None  # type: ignore[assignment]
-    ClientError = None  # type: ignore[assignment,misc]
+    boto3 = None  # type: ignore[assignment, misc]
+    ClientError = None  # type: ignore[assignment, misc]
 
 
 def get_env_var(name: str, required: bool = True) -> str:
@@ -186,7 +186,7 @@ def main() -> int:
         # Clone repository
         print(f"Cloning repository: {repo_url}")
         if not clone_repository(repo_url, clone_path):
-            result = {
+            clone_result = {
                 "repo": repo_name,
                 "url": repo_url,
                 "success": False,
@@ -194,8 +194,8 @@ def main() -> int:
                 "s3_path": None,
             }
             if api_url:
-                report_status(api_url, job_id, "failed", session_id, result)
-            print(json.dumps(result))
+                report_status(api_url, job_id, "failed", session_id, clone_result)
+            print(json.dumps(clone_result))
             return 1
 
         # Run Semgrep

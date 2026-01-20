@@ -269,7 +269,7 @@ class TestKubernetesClient:
     @patch("services.api.kubernetes_client.client")
     def test_create_job_handles_api_exception(self, mock_client, mock_k8s_config):
         """Test create_job handles ApiException."""
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.rest import ApiException  # type: ignore[import-untyped]
 
         mock_k8s_config.load_incluster_config.return_value = None
         mock_batch_api = MagicMock()

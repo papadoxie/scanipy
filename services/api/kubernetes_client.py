@@ -6,13 +6,13 @@ import uuid
 from typing import Any
 
 try:
-    from kubernetes import client
-    from kubernetes import config as k8s_config
-    from kubernetes.client.rest import ApiException
+    from kubernetes import client  # type: ignore[import-untyped]
+    from kubernetes import config as k8s_config  # type: ignore[import-untyped]
+    from kubernetes.client.rest import ApiException  # type: ignore[import-untyped]
 except ImportError:
-    client = None  # type: ignore[assignment,misc]
-    k8s_config = None  # type: ignore[assignment,misc]
-    ApiException = None  # type: ignore[assignment,misc]
+    client = None  # type: ignore[assignment, misc]
+    k8s_config = None  # type: ignore[assignment, misc]
+    ApiException = None  # type: ignore[assignment, misc]
 
 from .config import APIConfig
 from .job_template import create_job_manifest, generate_job_name
@@ -37,8 +37,8 @@ class KubernetesClient:
             )
 
         self.config = api_config
-        self.batch_api = None
-        self.core_api = None
+        self.batch_api: Any = None
+        self.core_api: Any = None
         self._init_client()
 
     def _init_client(self) -> None:
@@ -88,6 +88,7 @@ class KubernetesClient:
         """
         if not self.batch_api:
             raise RuntimeError("Kubernetes client not initialized")
+        assert self.batch_api is not None  # Type narrowing for mypy
 
         job_id = str(uuid.uuid4())
         job_name = generate_job_name(session_id, repo_name)
@@ -128,6 +129,7 @@ class KubernetesClient:
         """
         if not self.batch_api:
             raise RuntimeError("Kubernetes client not initialized")
+        assert self.batch_api is not None  # Type narrowing for mypy
 
         try:
             job = self.batch_api.read_namespaced_job(
@@ -135,7 +137,7 @@ class KubernetesClient:
                 namespace=self.config.k8s_namespace,
             )
 
-            status = {
+            status: dict[str, Any] = {
                 "name": job_name,
                 "active": job.status.active or 0,
                 "succeeded": job.status.succeeded or 0,
@@ -144,8 +146,9 @@ class KubernetesClient:
             }
 
             if job.status.conditions:
+                conditions_list: list[dict[str, Any]] = status["conditions"]
                 for condition in job.status.conditions:
-                    status["conditions"].append(
+                    conditions_list.append(
                         {
                             "type": condition.type,
                             "status": condition.status,
@@ -170,6 +173,7 @@ class KubernetesClient:
         """
         if not self.batch_api:
             raise RuntimeError("Kubernetes client not initialized")
+        assert self.batch_api is not None  # Type narrowing for mypy
 
         try:
             self.batch_api.delete_namespaced_job(
