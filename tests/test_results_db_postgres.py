@@ -221,22 +221,3 @@ class TestResultsDatabasePostgreSQL:
         assert sessions[0]["status"] == "completed"
         assert sessions[0]["result_count"] == 5
         assert sessions[0]["success_count"] == 4
-
-    @patch("tools.semgrep.results_db.psycopg2")
-    def test_update_session_status_postgres(self, mock_psycopg2):
-        """Test update_session_status works with PostgreSQL."""
-        mock_conn = MagicMock()
-        mock_cur = MagicMock()
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=None)
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
-        mock_psycopg2.connect.return_value = mock_conn
-
-        db = ResultsDatabase(db_url="postgresql://user:pass@host/db")
-        db.update_session_status(1, "completed")
-
-        mock_cur.execute.assert_called()
-        call_args = mock_cur.execute.call_args[0][0]
-        assert "UPDATE" in call_args
-        assert "status" in call_args

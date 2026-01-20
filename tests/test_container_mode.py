@@ -264,6 +264,7 @@ class TestContainerMode:
         mock_requests = MagicMock()
         sys.modules["requests"] = mock_requests
         try:
+
             class MockRequestError(Exception):
                 pass
 
@@ -303,6 +304,7 @@ class TestContainerMode:
         mock_requests = MagicMock()
         sys.modules["requests"] = mock_requests
         try:
+
             class MockRequestError(Exception):
                 pass
 
@@ -362,6 +364,7 @@ class TestContainerMode:
         mock_requests = MagicMock()
         sys.modules["requests"] = mock_requests
         try:
+
             class MockRequestError(Exception):
                 pass
 

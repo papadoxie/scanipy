@@ -188,6 +188,7 @@ class TestUploadToS3:
     @patch("tools.semgrep.worker.worker.boto3")
     def test_upload_failure(self, mock_boto3):
         """Test upload_to_s3 returns None on ClientError."""
+
         # Create a mock ClientError class
         class MockClientError(Exception):
             def __init__(self, error_dict, operation_name):
@@ -196,6 +197,7 @@ class TestUploadToS3:
                 super().__init__(f"{operation_name}: {error_dict}")
 
         import tools.semgrep.worker.worker as worker_module
+
         original_client_error = worker_module.ClientError
         try:
             # Set ClientError to our mock class
@@ -220,8 +222,10 @@ class TestUploadToS3:
         # Ensure ClientError is available (not None)
         try:
             from botocore.exceptions import ClientError
+
             # Ensure ClientError is available in worker module
             import tools.semgrep.worker.worker as worker_module
+
             worker_module.ClientError = ClientError
         except ImportError:
             pytest.skip("botocore not available")
@@ -455,13 +459,8 @@ class TestImportErrorHandling:
 
     def test_upload_to_s3_with_missing_boto3(self):
         """Test upload_to_s3 handles missing boto3 gracefully."""
-        import builtins
         import importlib
         import sys
-
-        # Save original boto3
-        original_boto3 = sys.modules.get("boto3")
-        original_botocore = sys.modules.get("botocore")
 
         # Get the real __import__ before any patching
         real_import = __import__
@@ -476,6 +475,7 @@ class TestImportErrorHandling:
                 # Remove from sys.modules and reload
                 sys.modules.pop("tools.semgrep.worker.worker", None)
                 import tools.semgrep.worker.worker as worker_module
+
                 importlib.reload(worker_module)
 
                 # Verify that boto3 is None (ImportError was caught)

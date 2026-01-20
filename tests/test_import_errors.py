@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import builtins
 import importlib
 import sys
 from unittest.mock import patch
-
-import pytest
 
 
 class TestImportErrorHandling:
@@ -28,6 +25,7 @@ class TestImportErrorHandling:
                 # Remove from sys.modules and reload
                 sys.modules.pop("services.api.kubernetes_client", None)
                 import services.api.kubernetes_client as k8s_module
+
                 importlib.reload(k8s_module)
 
                 # Verify that client, k8s_config, and ApiException are None
@@ -53,6 +51,7 @@ class TestImportErrorHandling:
                 # Remove from sys.modules and reload
                 sys.modules.pop("tools.semgrep.results_db", None)
                 import tools.semgrep.results_db as db_module
+
                 importlib.reload(db_module)
 
                 # Verify that psycopg2, sql, and pg_connection are None
@@ -78,6 +77,7 @@ class TestImportErrorHandling:
                 # Remove from sys.modules and reload
                 sys.modules.pop("services.api.api", None)
                 import services.api.api as api_module
+
                 importlib.reload(api_module)
 
                 # Verify that FastAPI, HTTPException, status, JSONResponse, and BaseModel are None

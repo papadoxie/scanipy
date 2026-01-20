@@ -11,12 +11,10 @@ pytest_plugins = ("pytest_asyncio",)
 # Mock FastAPI before importing api module
 with patch("services.api.api.FastAPI"):
     from services.api.api import (
-        CreateScanRequest,
         init_api,
         update_job_status,
     )
     from services.api.config import APIConfig
-    from tools.semgrep.results_db import ResultsDatabase
 
 
 class TestAPIEndpoints:
@@ -239,7 +237,9 @@ class TestAPIEndpoints:
         init_api(api_config)
         api_module.k8s_client = None
 
-        request = api_module.AddReposRequest(repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}])
+        request = api_module.AddReposRequest(
+            repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}]
+        )
 
         with pytest.raises(api_module.HTTPException) as exc_info:
             await api_module.add_repos_to_scan(1, request)
@@ -259,7 +259,6 @@ class TestAPIEndpoints:
     @pytest.mark.asyncio
     async def test_update_job_status(self, api_config, mock_db):
         """Test update_job_status endpoint."""
-        from services.api import api as api_module
 
         init_api(api_config)
 
@@ -317,7 +316,6 @@ class TestAPIEndpoints:
     @pytest.mark.asyncio
     async def test_update_job_status_no_result(self, api_config, mock_db):
         """Test update_job_status handles missing result."""
-        from services.api import api as api_module
 
         init_api(api_config)
 
@@ -457,7 +455,9 @@ class TestAPIEndpoints:
         init_api(api_config)
         api_module.k8s_client = mock_k8s_client
 
-        request = api_module.AddReposRequest(repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}])
+        request = api_module.AddReposRequest(
+            repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}]
+        )
 
         with pytest.raises(api_module.HTTPException) as exc_info:
             await api_module.add_repos_to_scan(999, request)
@@ -478,7 +478,9 @@ class TestAPIEndpoints:
         api_module.k8s_client = mock_k8s_client
         api_module.api_config = None
 
-        request = api_module.AddReposRequest(repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}])
+        request = api_module.AddReposRequest(
+            repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}]
+        )
 
         with pytest.raises(api_module.HTTPException) as exc_info:
             await api_module.add_repos_to_scan(1, request)
@@ -530,7 +532,8 @@ class TestAPIEndpoints:
 
         request = api_module.AddReposRequest(
             repos=[
-                {"name": "owner/repo1", "url": "https://github.com/owner/repo1"},  # Already analyzed
+                # Already analyzed
+                {"name": "owner/repo1", "url": "https://github.com/owner/repo1"},
                 {"name": "owner/repo2", "url": "https://github.com/owner/repo2"},
             ]
         )
@@ -555,7 +558,9 @@ class TestAPIEndpoints:
         init_api(api_config)
         api_module.k8s_client = mock_k8s_client
 
-        request = api_module.AddReposRequest(repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}])
+        request = api_module.AddReposRequest(
+            repos=[{"name": "owner/repo", "url": "https://github.com/owner/repo"}]
+        )
 
         result = await api_module.add_repos_to_scan(1, request)
 
