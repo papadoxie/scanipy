@@ -70,11 +70,27 @@ scanipy/
 ├── tools/
 │   ├── semgrep/
 │   │   ├── semgrep_runner.py  # Semgrep integration
+│   │   ├── results_db.py      # Database (SQLite & PostgreSQL)
+│   │   ├── worker/
+│   │   │   ├── worker.py      # Containerized worker script
+│   │   │   └── Dockerfile     # Worker container image
 │   │   └── rules/
 │   │       └── tarslip.yaml   # Built-in security rules
 │   └── codeql/
 │       └── codeql_runner.py   # CodeQL integration
-├── tests/                  # Comprehensive test suite (464+ tests, 99% coverage)
+├── services/
+│   └── api/
+│       ├── api.py             # FastAPI service
+│       ├── config.py          # Configuration management
+│       ├── kubernetes_client.py  # K8s client wrapper
+│       ├── job_template.py    # K8s Job manifest generator
+│       └── Dockerfile         # API service container image
+├── k8s/                      # Kubernetes manifests
+│   ├── api-service.yaml      # API service deployment
+│   ├── rbac.yaml             # RBAC configuration
+│   ├── configmap.yaml        # ConfigMap
+│   └── job-template.yaml     # Job template
+├── tests/                    # Comprehensive test suite (467 tests, 99% coverage)
 ├── scripts/
 │   ├── pre-commit          # Git pre-commit hook
 │   └── setup-hooks.sh      # Hook installation script
@@ -86,11 +102,12 @@ scanipy/
 
 ## Code Quality Standards
 
-- **99% test coverage** enforced via CI
+- **99% test coverage** enforced via CI (previously 100%, adjusted for defensive ImportError handlers)
 - **Ruff linting** for code style and error detection
 - **Mypy type checking** for static type analysis
-- **Pre-commit hooks** run linting and tests before each commit
+- **Pre-commit hooks** run linting, formatting, and tests before each commit
 - **GitHub Actions** validates all PRs with lint, typecheck, and test jobs
+- **Optional dependencies** handled gracefully with ImportError handlers
 
 ## Adding New Features
 

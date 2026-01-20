@@ -119,8 +119,29 @@ scanipy \
   --search-strategy tiered
 ```
 
+## Containerized Execution
+
+For large-scale analysis, Scanipy supports containerized execution using Kubernetes Jobs:
+
+```bash
+# Run Semgrep in containerized mode
+scanipy --query "extractall" --language python --run-semgrep \
+  --container-mode \
+  --api-url http://scanipy-api:8000 \
+  --s3-bucket scanipy-results \
+  --max-parallel-jobs 20
+```
+
+This enables:
+- **Parallel execution** of multiple repository scans
+- **Scalable architecture** using Kubernetes
+- **Production deployment** on EKS, GKE, or AKS
+
+See [Semgrep Integration](semgrep.md#containerized-execution-kubernetes) for detailed information and [Deployment Guide](deployment.md) for EKS setup.
+
 ## Next Steps
 
 - [Semgrep Integration](semgrep.md) - Run security analysis with Semgrep
 - [CodeQL Integration](codeql.md) - Run semantic analysis with CodeQL
+- [Deployment Guide](deployment.md) - Deploy containerized execution to EKS
 - [CLI Reference](cli-reference.md) - Complete command-line options

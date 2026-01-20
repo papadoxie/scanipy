@@ -14,8 +14,10 @@ A powerful command-line tool to scan open source code-bases on GitHub for securi
 - **Keyword Filtering**: Filter results by keywords found in file contents
 - **Semgrep Integration**: Automatically clone and scan repositories with Semgrep
 - **CodeQL Integration**: Run CodeQL analysis for deep semantic security scanning
+- **Containerized Execution**: Run parallel Semgrep scans using Kubernetes Jobs (EKS-ready)
 - **Resume Capability**: Resume interrupted analysis from where it left off (Semgrep & CodeQL)
 - **Custom Rules**: Use built-in security rules or provide your own
+- **PostgreSQL Support**: Use PostgreSQL for production deployments alongside SQLite
 
 
 ## 🏆 Vulnerabilities Found
@@ -49,8 +51,14 @@ scanipy --query "extractall" --language python
 # Or run from source
 python scanipy.py --query "extractall" --language python
 
-# Run Semgrep analysis
+# Run Semgrep analysis (local mode)
 scanipy --query "extractall" --language python --run-semgrep
+
+# Run Semgrep analysis (containerized mode - requires API service)
+scanipy --query "extractall" --language python --run-semgrep \
+  --container-mode \
+  --api-url http://scanipy-api:8000 \
+  --s3-bucket scanipy-results
 
 # Run CodeQL analysis
 scanipy --query "extractall" --language python --run-codeql
@@ -66,6 +74,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 | [Usage Guide](docs/usage.md) | Basic and advanced usage |
 | [Semgrep Integration](docs/semgrep.md) | Running Semgrep security analysis |
 | [CodeQL Integration](docs/codeql.md) | Running CodeQL semantic analysis |
+| [Deployment Guide](docs/deployment.md) | Deploying containerized execution to EKS |
 | [CLI Reference](docs/cli-reference.md) | Complete command-line options |
 | [Examples](docs/examples.md) | Real-world usage examples |
 | [Development](docs/development.md) | Contributing and development setup |

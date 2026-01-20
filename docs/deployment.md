@@ -1,8 +1,49 @@
 # Deployment Guide
 
-This guide covers deploying Scanipy's containerized Semgrep analysis to Amazon EKS (Elastic Kubernetes Service).
+This guide covers deploying Scanipy's containerized Semgrep analysis to Amazon EKS (Elastic Kubernetes Service) and local development setup.
 
-## Prerequisites
+## Overview
+
+Scanipy's containerized architecture consists of:
+
+- **API Service**: FastAPI application that manages scan sessions and orchestrates Kubernetes Jobs
+- **Worker Containers**: Ephemeral Kubernetes Jobs that clone repositories, run Semgrep, and upload results to S3
+- **PostgreSQL Database**: External database (RDS) for persistent storage of scan sessions and metadata
+- **AWS S3 Bucket**: For storing raw Semgrep analysis results (SARIF/JSON)
+
+## Local Development
+
+For local testing and development, use Docker Compose:
+
+```bash
+# Start all services (PostgreSQL, MinIO, API)
+docker-compose up -d
+
+# Check service status
+docker-compose ps
+
+# View API logs
+docker-compose logs -f api
+
+# Test API health
+curl http://localhost:8000/health
+
+# Run analysis via CLI
+scanipy --query "extractall" --language python --run-semgrep \
+  --container-mode \
+  --api-url http://localhost:8000 \
+  --s3-bucket scanipy-results
+```
+
+### Local Development Prerequisites
+
+- Docker and Docker Compose
+- kubectl configured for local cluster (k3d, kind, or minikube)
+- Ports available: 8000 (API), 5432 (PostgreSQL), 9000/9001 (MinIO)
+
+## Production Deployment (EKS)
+
+### Prerequisites
 
 - AWS account with appropriate permissions
 - EKS cluster (or create one with `eksctl`)
@@ -47,6 +88,8 @@ aws s3 mb s3://scanipy-results --region <region>
 
 ### Create RDS PostgreSQL Database
 
+Scanipy supports both SQLite (for local development) and PostgreSQL (for production). For production, use RDS:
+
 ```bash
 aws rds create-db-instance \
   --db-instance-identifier scanipy-db \
@@ -54,8 +97,12 @@ aws rds create-db-instance \
   --engine postgres \
   --master-username scanipy \
   --master-user-password <password> \
-  --allocated-storage 20
+  --allocated-storage 20 \
+  --publicly-accessible false \
+  --vpc-security-group-ids <security-group-id>
 ```
+
+**Note**: Ensure the RDS security group allows connections from your EKS cluster's security group.
 
 ### Create ECR Repositories
 
@@ -233,9 +280,37 @@ spec:
         averageUtilization: 70
 ```
 
+## Database Configuration
+
+### SQLite (Local Development)
+
+SQLite is used by default when `DATABASE_PATH` is set:
+
+```bash
+# In docker-compose.yml or environment
+DATABASE_PATH=/app/data/scanipy.db
+```
+
+### PostgreSQL (Production)
+
+For production deployments, use PostgreSQL:
+
+```bash
+# Connection string format
+DATABASE_URL=postgresql://user:password@host:port/database
+
+# Example for RDS
+DATABASE_URL=postgresql://scanipy:password@scanipy-db.xxxxx.us-east-1.rds.amazonaws.com:5432/scanipy
+```
+
+The API service automatically detects which database to use based on the environment variable provided:
+- `DATABASE_PATH` → SQLite
+- `DATABASE_URL` → PostgreSQL
+
 ## Cost Optimization
 
 - Use Spot Instances for worker nodes
 - Set appropriate resource limits
 - Configure Job TTL to clean up completed jobs
 - Use S3 lifecycle policies for old results
+- Use RDS Reserved Instances for predictable workloads

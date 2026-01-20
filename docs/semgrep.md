@@ -62,16 +62,28 @@ scanipy --query "extractall" --run-semgrep --keep-cloned --clone-dir ./repos
 
 ## Resuming Interrupted Analysis
 
-When running Semgrep analysis on many repositories, you can use `--results-db` to save progress to a SQLite database. If the analysis is interrupted (Ctrl+C, network error, etc.), simply re-run the same command to resume from where you left off:
+When running Semgrep analysis on many repositories, you can use `--results-db` to save progress to a database. Scanipy supports both SQLite (for local development) and PostgreSQL (for production). If the analysis is interrupted (Ctrl+C, network error, etc.), simply re-run the same command to resume from where you left off:
 
 ```bash
-# Start analysis with database persistence
+# Start analysis with SQLite database persistence
 scanipy --query "extractall" --run-semgrep --results-db ./results.db
 
 # If interrupted, just run the same command again - already analyzed repos will be skipped
 scanipy --query "extractall" --run-semgrep --results-db ./results.db
 # Output: "📂 Resuming session 1 - 5 repos already analyzed"
+
+# Or use --resume flag explicitly
+scanipy --query "extractall" --run-semgrep --results-db ./results.db --resume
 ```
+
+### Database Support
+
+- **SQLite**: Default for local development. Use `--results-db ./path/to/db.sqlite`
+- **PostgreSQL**: For production deployments. Configure via API service environment variables (see [Deployment Guide](deployment.md))
+
+The database stores:
+- Analysis sessions (query, timestamp, rules used, status)
+- Results for each repository (success/failure, Semgrep output, S3 path, K8s job ID)
 
 ## Containerized Execution (Kubernetes)
 
@@ -112,23 +124,31 @@ scanipy --query "extractall" --run-semgrep \
 
 When using `--container-mode`:
 
-1. CLI creates a scan session via API
-2. API creates Kubernetes Jobs (one per repository)
-3. Each Job runs a worker container that:
-   - Clones the repository
-   - Runs Semgrep analysis
-   - Uploads results to S3
-   - Reports status back to API
-4. CLI polls API for completion and fetches results
+1. **CLI** creates a scan session via API service
+2. **API Service** creates Kubernetes Jobs (one per repository) up to `--max-parallel-jobs` limit
+3. **Worker Containers** (one per Job) execute in parallel:
+   - Clone the repository
+   - Run Semgrep analysis
+   - Upload results to S3
+   - Report status back to API service
+4. **CLI** polls API service for completion and fetches final results
+
+### Benefits of Containerized Mode
+
+- **Parallel Execution**: Multiple repositories scanned simultaneously
+- **Scalability**: Leverage Kubernetes cluster resources
+- **Isolation**: Each scan runs in its own container
+- **Resilience**: Failed jobs don't affect others
+- **Production-Ready**: Designed for EKS deployment
 
 ### Deployment
 
-See [Deployment Guide](deployment.md) for detailed EKS deployment instructions.
-
-The database stores:
-
-- Analysis sessions (query, timestamp, rules used)
-- Results for each repository (success/failure, Semgrep output)
+See [Deployment Guide](deployment.md) for detailed EKS deployment instructions, including:
+- Building and pushing container images
+- Setting up Kubernetes resources (RBAC, ConfigMaps, Secrets)
+- Configuring IAM roles for S3 access
+- Exposing the API service
+- Monitoring and troubleshooting
 
 ## Built-in Rules
 
@@ -150,6 +170,12 @@ scanipy --query "extractall" --run-semgrep --rules ./tools/semgrep/rules/tarslip
 | `--rules` | Path to custom Semgrep rules |
 | `--pro` | Use Semgrep Pro |
 | `--semgrep-args` | Additional Semgrep CLI arguments |
-| `--clone-dir` | Directory for cloned repos |
-| `--keep-cloned` | Keep repos after analysis |
-| `--results-db` | SQLite database for saving/resuming |
+| `--clone-dir` | Directory for cloned repos (local mode only) |
+| `--keep-cloned` | Keep repos after analysis (local mode only) |
+| `--results-db` | Database path for saving/resuming (SQLite) |
+| `--resume` | Resume analysis from previous session |
+| `--container-mode` | Enable containerized execution via API service |
+| `--api-url` | API service URL (required for container mode) |
+| `--s3-bucket` | S3 bucket for storing results (required for container mode) |
+| `--k8s-namespace` | Kubernetes namespace for jobs (default: `default`) |
+| `--max-parallel-jobs` | Maximum parallel Kubernetes jobs (default: 10) |
