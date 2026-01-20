@@ -25,17 +25,18 @@ echo "✅ Formatting check passed!"
 echo ""
 echo "Running tests before commit..."
 
-# Run pytest and capture the exit code
-python -m pytest tests/ -q
+# Run pytest with coverage check and capture the exit code
+python -m pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=99 -q
 
 # Check if tests passed
 if [ $? -ne 0 ]; then
     echo ""
-    echo "❌ Commit rejected: Tests failed!"
-    echo "Please fix the failing tests before committing."
+    echo "❌ Commit rejected: Tests failed or coverage below 99%!"
+    echo "Please fix the failing tests or improve coverage before committing."
     exit 1
 fi
 
 echo "✅ All tests passed!"
+echo "✅ Coverage check passed (≥99%)!"
 echo "✅ All pre-commit checks passed!"
 exit 0

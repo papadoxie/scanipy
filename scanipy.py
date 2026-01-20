@@ -400,6 +400,32 @@ def create_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resume analysis from previous session (requires --results-db)",
     )
+    semgrep_group.add_argument(
+        "--api-url",
+        default=None,
+        help="API service URL for containerized execution (e.g., http://localhost:8000)",
+    )
+    semgrep_group.add_argument(
+        "--container-mode",
+        action="store_true",
+        help="Enable containerized execution using Kubernetes Jobs",
+    )
+    semgrep_group.add_argument(
+        "--s3-bucket",
+        default=None,
+        help="S3 bucket for storing analysis results (required for container mode)",
+    )
+    semgrep_group.add_argument(
+        "--k8s-namespace",
+        default="default",
+        help="Kubernetes namespace for jobs (default: default)",
+    )
+    semgrep_group.add_argument(
+        "--max-parallel-jobs",
+        type=int,
+        default=10,
+        help="Maximum number of parallel jobs (default: 10)",
+    )
 
     # CodeQL options
     codeql_group = parser.add_argument_group("CodeQL Analysis")
@@ -473,6 +499,11 @@ def build_configs_from_args(
         use_pro=args.pro,
         db_path=args.results_db,
         resume=args.resume,
+        api_url=args.api_url,
+        container_mode=args.container_mode,
+        s3_bucket=args.s3_bucket,
+        k8s_namespace=args.k8s_namespace,
+        max_parallel_jobs=args.max_parallel_jobs,
     )
 
     codeql_config = CodeQLConfig(
@@ -524,18 +555,154 @@ def run_semgrep_analysis(
         config: Semgrep configuration
         query: The search query (for session tracking)
     """
-    analyze_repositories_with_semgrep(
-        repo_list=repos,
-        colors=Colors,
-        semgrep_args=config.args,
-        clone_dir=config.clone_dir,
-        keep_cloned=config.keep_cloned,
-        rules_path=config.rules_path,
-        use_pro=config.use_pro,
-        db_path=config.db_path,
-        resume=config.resume,
-        query=query,
-    )
+    # Check if container mode is enabled
+    if config.container_mode:
+        if not config.api_url:
+            print(
+                f"{Colors.ERROR}❌ Error: --api-url is required when using "
+                f"--container-mode{Colors.RESET}"
+            )
+            return
+
+        # Use API service for containerized execution
+        _run_semgrep_via_api(repos, config, query)
+    else:
+        # Use local execution (existing behavior)
+        analyze_repositories_with_semgrep(
+            repo_list=repos,
+            colors=Colors,
+            semgrep_args=config.args,
+            clone_dir=config.clone_dir,
+            keep_cloned=config.keep_cloned,
+            rules_path=config.rules_path,
+            use_pro=config.use_pro,
+            db_path=config.db_path,
+            resume=config.resume,
+            query=query,
+        )
+
+
+def _run_semgrep_via_api(
+    repos: list[dict[str, Any]],
+    config: SemgrepConfig,
+    query: str = "",
+) -> None:
+    """Run Semgrep analysis via API service (containerized mode).
+
+    Args:
+        repos: List of repository dictionaries
+        config: Semgrep configuration
+        query: The search query
+    """
+    try:
+        import time  # noqa: PLC0415
+
+        import requests  # noqa: PLC0415
+    except ImportError:
+        print(
+            f"{Colors.ERROR}❌ Error: requests library is required for "
+            f"container mode.{Colors.RESET}"
+        )
+        print(f"{Colors.INFO}💡 Install with: pip install requests{Colors.RESET}")
+        return
+
+    assert config.api_url is not None
+
+    api_base = config.api_url.rstrip("/")
+
+    print(f"{Colors.INFO}🚀 Creating scan session via API...{Colors.RESET}")
+
+    # Create scan session
+    try:
+        response = requests.post(
+            f"{api_base}/api/v1/scans",
+            json={
+                "query": query,
+                "rules_path": config.rules_path,
+                "use_pro": config.use_pro,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        session_data = response.json()
+        session_id = session_data["session_id"]
+        print(f"{Colors.SUCCESS}✅ Created session {session_id}{Colors.RESET}")
+    except requests.RequestException as exc:
+        print(f"{Colors.ERROR}❌ Failed to create scan session: {exc}{Colors.RESET}")
+        return
+
+    # Add repositories to scan
+    print(f"{Colors.INFO}📦 Adding {len(repos)} repositories to scan...{Colors.RESET}")
+    try:
+        response = requests.post(
+            f"{api_base}/api/v1/scans/{session_id}/repos",
+            json={"repos": repos},
+            timeout=60,
+        )
+        response.raise_for_status()
+        jobs_data = response.json()
+        jobs_created = jobs_data.get("jobs_created", 0)
+        print(f"{Colors.SUCCESS}✅ Created {jobs_created} Kubernetes Jobs{Colors.RESET}")
+    except requests.RequestException as exc:
+        print(f"{Colors.ERROR}❌ Failed to create jobs: {exc}{Colors.RESET}")
+        return
+
+    # Poll for results
+    print(f"{Colors.INFO}⏳ Waiting for analysis to complete...{Colors.RESET}")
+    max_wait_time = 3600  # 1 hour max
+    poll_interval = 10  # Poll every 10 seconds
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait_time:
+        try:
+            response = requests.get(
+                f"{api_base}/api/v1/scans/{session_id}",
+                timeout=30,
+            )
+            response.raise_for_status()
+            status_data = response.json()
+
+            completed = status_data.get("completed_repos", 0)
+            total = status_data.get("total_repos", 0)
+            status_val = status_data.get("status", "unknown")
+
+            print(
+                f"{Colors.PROGRESS}📊 Status: {status_val} - "
+                f"{completed}/{total} repositories completed{Colors.RESET}",
+                end="\r",
+            )
+
+            if status_val == "completed":
+                print()  # New line after progress
+                break
+
+            time.sleep(poll_interval)
+        except requests.RequestException:
+            time.sleep(poll_interval)
+            continue
+
+    # Get final results
+    print(f"{Colors.INFO}📥 Fetching results...{Colors.RESET}")
+    try:
+        response = requests.get(
+            f"{api_base}/api/v1/scans/{session_id}/results",
+            timeout=30,
+        )
+        response.raise_for_status()
+        results = response.json()
+
+        print(f"\n{Colors.HEADER}{'─' * 80}{Colors.RESET}")
+        print(f"{Colors.INFO}📊 Semgrep Analysis Summary:{Colors.RESET}")
+        successes = sum(1 for r in results if r.get("success"))
+        total = len(results)
+        failed = total - successes
+        print(
+            f"{Colors.INFO}✓ Successfully analyzed: {successes}/{total} repositories{Colors.RESET}"
+        )
+        print(f"{Colors.INFO}✗ Failed to analyze: {failed}/{total} repositories{Colors.RESET}")
+        print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
+    except requests.RequestException as exc:
+        print(f"{Colors.ERROR}❌ Failed to fetch results: {exc}{Colors.RESET}")
 
 
 def run_codeql_analysis(

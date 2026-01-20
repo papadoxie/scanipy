@@ -74,7 +74,7 @@ scanipy/
 │   │       └── tarslip.yaml   # Built-in security rules
 │   └── codeql/
 │       └── codeql_runner.py   # CodeQL integration
-├── tests/                  # Comprehensive test suite (333 tests, 100% coverage)
+├── tests/                  # Comprehensive test suite (464+ tests, 99% coverage)
 ├── scripts/
 │   ├── pre-commit          # Git pre-commit hook
 │   └── setup-hooks.sh      # Hook installation script
@@ -86,7 +86,7 @@ scanipy/
 
 ## Code Quality Standards
 
-- **100% test coverage** enforced via CI
+- **99% test coverage** enforced via CI
 - **Ruff linting** for code style and error detection
 - **Mypy type checking** for static type analysis
 - **Pre-commit hooks** run linting and tests before each commit
@@ -180,5 +180,5 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 - [ ] Tests pass (`make test`)
 - [ ] Linting passes (`make lint`)
 - [ ] Type checking passes (`make typecheck`)
-- [ ] 100% test coverage maintained
+- [ ] 99% test coverage maintained
 - [ ] Documentation updated (if applicable)

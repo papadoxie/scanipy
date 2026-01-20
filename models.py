@@ -89,6 +89,12 @@ class SemgrepConfig:
     use_pro: bool = False
     db_path: str | None = None
     resume: bool = False
+    # Container mode configuration
+    api_url: str | None = None
+    container_mode: bool = False
+    s3_bucket: str | None = None
+    k8s_namespace: str = "default"
+    max_parallel_jobs: int = 10
 
 
 @dataclass

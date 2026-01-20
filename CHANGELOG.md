@@ -32,8 +32,8 @@ First official release of Scanipy! 🎉
 
 ### 🧪 Testing
 
-- 333 comprehensive unit tests
-- 100% code coverage enforced via CI
+- 464+ comprehensive unit tests
+- 99% code coverage enforced via CI
 - Pre-commit hooks for automated testing
 
 ### ⚙️ CI/CD

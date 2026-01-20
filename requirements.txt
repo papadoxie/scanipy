@@ -73,3 +73,11 @@ uvicorn==0.40.0
 wcmatch==8.5.2
 wrapt==1.17.3
 zipp==3.23.0
+
+# Optional dependencies for containerized execution and advanced features
+# These are optional - the code handles missing dependencies gracefully
+psycopg2-binary>=2.9.0  # PostgreSQL support for results database
+boto3>=1.28.0  # AWS S3 support for storing analysis results
+kubernetes>=28.0.0  # Kubernetes client for containerized execution
+fastapi>=0.100.0  # FastAPI for API service
+pytest-asyncio>=0.21.0  # Async test support (dev dependency)

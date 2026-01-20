@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scanipy-config
+  namespace: scanipy
+data:
+  s3_bucket: "scanipy-results"
+  aws_region: "us-east-1"
+  api_url: "http://scanipy-api:8000"
+  k8s_namespace: "scanipy"
+  worker_image: "scanipy-semgrep-worker:latest"

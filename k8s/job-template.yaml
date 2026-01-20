@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: semgrep-worker-template
+  namespace: scanipy
+  labels:
+    app: scanipy-semgrep
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: scanipy-semgrep
+    spec:
+      restartPolicy: Never
+      serviceAccountName: scanipy-worker
+      containers:
+      - name: semgrep-worker
+        image: scanipy-semgrep-worker:latest
+        env:
+        - name: REPO_URL
+          value: ""
+        - name: REPO_NAME
+          value: ""
+        - name: JOB_ID
+          value: ""
+        - name: SESSION_ID
+          value: ""
+        - name: SEMGREP_ARGS
+          value: ""
+        - name: USE_PRO
+          value: "false"
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: scanipy-config
+              key: s3_bucket
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: scanipy-config
+              key: aws_region
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: scanipy-config
+              key: api_url
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"

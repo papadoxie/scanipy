@@ -1,4 +1,4 @@
-"""Tests for the Semgrep results database module."""
+"""Tests for the Semgrep results database module (SQLite)."""
 
 from __future__ import annotations
 
@@ -321,3 +321,13 @@ class TestResultsDatabase:
 
         assert results1[0]["output"] == "session1 output"
         assert results2[0]["output"] == "session2 output"
+
+    def test_update_session_status(self, db):
+        """Test updating session status."""
+        session_id = db.create_session("test query")
+
+        db.update_session_status(session_id, "completed")
+
+        # Verify status was updated
+        sessions = db.get_all_sessions()
+        assert sessions[0]["status"] == "completed"

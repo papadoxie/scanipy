@@ -73,6 +73,58 @@ scanipy --query "extractall" --run-semgrep --results-db ./results.db
 # Output: "📂 Resuming session 1 - 5 repos already analyzed"
 ```
 
+## Containerized Execution (Kubernetes)
+
+Scanipy supports containerized execution using Kubernetes Jobs for parallel analysis across multiple repositories.
+
+### Prerequisites
+
+1. **Kubernetes cluster** (EKS, GKE, AKS, or local with k3d/kind)
+2. **API service** running in the cluster
+3. **Worker container image** built and available
+4. **S3 bucket** for storing results (or S3-compatible storage)
+
+### Basic Containerized Usage
+
+```bash
+# Run with containerized execution
+scanipy --query "extractall" --run-semgrep \
+  --container-mode \
+  --api-url http://scanipy-api:8000 \
+  --s3-bucket scanipy-results
+```
+
+### Container Mode Options
+
+```bash
+# Full container mode example
+scanipy --query "extractall" --run-semgrep \
+  --container-mode \
+  --api-url http://scanipy-api:8000 \
+  --s3-bucket scanipy-results \
+  --k8s-namespace scanipy \
+  --max-parallel-jobs 20 \
+  --rules ./custom-rules.yaml \
+  --pro
+```
+
+### Architecture
+
+When using `--container-mode`:
+
+1. CLI creates a scan session via API
+2. API creates Kubernetes Jobs (one per repository)
+3. Each Job runs a worker container that:
+   - Clones the repository
+   - Runs Semgrep analysis
+   - Uploads results to S3
+   - Reports status back to API
+4. CLI polls API for completion and fetches results
+
+### Deployment
+
+See [Deployment Guide](deployment.md) for detailed EKS deployment instructions.
+
 The database stores:
 
 - Analysis sessions (query, timestamp, rules used)
