@@ -265,3 +265,73 @@ scanipy --query "unsafe deserialization" --language java \
 - **Automatic Skipping**: Already-analyzed repositories are automatically skipped
 - **Incremental Saves**: Results are saved after each repository
 - **Crash Recovery**: Analysis survives Ctrl+C, network errors, or system crashes
+
+## Containerized Execution
+
+For large-scale parallel analysis using Kubernetes:
+
+### Basic Containerized Analysis
+
+```bash
+# Run Semgrep analysis in containerized mode
+scanipy --query "extractall" --language python --run-semgrep \
+  --container-mode \
+  --api-url http://scanipy-api:8000 \
+  --s3-bucket scanipy-results
+```
+
+### High-Throughput Analysis
+
+Run analysis on many repositories in parallel:
+
+```bash
+# Analyze 50+ repositories with 20 parallel jobs
+scanipy --query "pickle.loads" --language python \
+  --pages 10 \
+  --run-semgrep \
+  --container-mode \
+  --api-url http://scanipy-api:8000 \
+  --s3-bucket scanipy-results \
+  --k8s-namespace scanipy \
+  --max-parallel-jobs 20 \
+  --rules ./tools/semgrep/rules/tarslip.yaml
+```
+
+### Production Deployment Workflow
+
+1. **Deploy API service** (see [Deployment Guide](deployment.md)):
+   ```bash
+   kubectl apply -f k8s/api-service.yaml
+   kubectl apply -f k8s/rbac.yaml
+   kubectl apply -f k8s/configmap.yaml
+   ```
+
+2. **Run analysis from CLI**:
+   ```bash
+   scanipy --query "SQL injection" --language python \
+     --run-semgrep \
+     --container-mode \
+     --api-url http://scanipy-api.scanipy.svc.cluster.local:8000 \
+     --s3-bucket scanipy-results \
+     --max-parallel-jobs 30
+   ```
+
+3. **Monitor progress**:
+   ```bash
+   # Check Kubernetes jobs
+   kubectl get jobs -n scanipy
+   
+   # View API logs
+   kubectl logs -n scanipy deployment/scanipy-api
+   
+   # Check worker logs
+   kubectl logs -n scanipy job/semgrep-1-repo-name-abc123
+   ```
+
+### Benefits of Containerized Mode
+
+- **Parallel Execution**: Multiple repositories analyzed simultaneously
+- **Scalability**: Leverage entire Kubernetes cluster
+- **Isolation**: Each scan runs in isolated container
+- **Resilience**: Failed jobs don't affect others
+- **Production-Ready**: Designed for EKS/GKE/AKS deployment

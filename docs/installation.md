@@ -6,6 +6,11 @@
 - A GitHub Personal Access Token ([create one here](https://github.com/settings/tokens))
 - (Optional) [Semgrep](https://semgrep.dev/docs/getting-started/) for security analysis
 - (Optional) [CodeQL CLI](https://codeql.github.com/docs/codeql-cli/getting-started-with-the-codeql-cli/) for semantic security analysis
+- (Optional) For containerized execution:
+  - Kubernetes cluster (EKS, GKE, AKS, or local with k3d/kind)
+  - Docker for building container images
+  - AWS S3 bucket (or S3-compatible storage)
+  - PostgreSQL database (for production deployments)
 
 ## Install from PyPI (Recommended)
 
@@ -28,6 +33,46 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Or install with optional container dependencies
+pip install -r requirements.txt
+pip install psycopg2-binary boto3 kubernetes fastapi pytest-asyncio
+```
+
+## Optional Dependencies
+
+Scanipy supports optional dependencies for advanced features:
+
+### Containerized Execution
+
+For running Semgrep analysis in Kubernetes:
+
+```bash
+pip install psycopg2-binary  # PostgreSQL support
+pip install boto3            # AWS S3 support
+pip install kubernetes       # Kubernetes client
+pip install fastapi          # API service
+pip install pytest-asyncio  # Async test support (dev)
+```
+
+Or install all optional dependencies at once:
+
+```bash
+pip install scanipy-cli[container]
+```
+
+### Development Dependencies
+
+For contributing to Scanipy:
+
+```bash
+pip install scanipy-cli[dev]
+```
+
+Or install everything:
+
+```bash
+pip install scanipy-cli[all]
 ```
 
 ## Set up GitHub Token

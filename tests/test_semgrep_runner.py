@@ -653,6 +653,7 @@ class TestAnalyzeRepositoriesWithDatabase:
 
         db = ResultsDatabase(db_path)
         session_id = db.get_latest_session("test query")
+        assert session_id is not None
         results = db.get_session_results(session_id)
 
         assert len(results) == 1

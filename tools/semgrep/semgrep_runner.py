@@ -21,26 +21,47 @@ def _check_command_exists(cmd: str) -> bool:
         return False
 
 
-def _clone_repository(repo_url: str, clone_path: str, colors: Any) -> bool:
-    """Clone *repo_url* into *clone_path* and return True on success."""
+def clone_repository(repo_url: str, clone_path: str, colors: Any | None = None) -> bool:
+    """Clone *repo_url* into *clone_path* and return True on success.
+
+    Args:
+        repo_url: Repository URL to clone
+        clone_path: Path where repository should be cloned
+        colors: Optional color configuration for output (for backward compatibility)
+
+    Returns:
+        True if clone succeeded, False otherwise
+    """
     try:
         subprocess.run(
             ["git", "clone", "--depth=1", repo_url, clone_path], check=True, capture_output=True
         )
         return True
     except subprocess.CalledProcessError as exc:
-        print(f"{colors.ERROR}❌ Failed to clone {repo_url}: {exc}{colors.RESET}")
+        if colors:
+            print(f"{colors.ERROR}❌ Failed to clone {repo_url}: {exc}{colors.RESET}")
         return False
 
 
-def _run_semgrep(
+def run_semgrep_analysis(
     repo_path: str,
-    colors: Any,
     semgrep_args: str = "",
     rules_path: str | None = None,
     use_pro: bool = False,
+    colors: Any | None = None,
 ) -> tuple[bool, str]:
-    """Execute Semgrep against *repo_path* and return success flag with output."""
+    """Execute Semgrep against *repo_path* and return success flag with output.
+
+    Args:
+        repo_path: Path to repository to analyze
+        semgrep_args: Additional arguments for Semgrep
+        rules_path: Path to custom Semgrep rules
+        use_pro: Whether to use Semgrep Pro
+        colors: Optional color configuration for output (for backward compatibility)
+
+    Returns:
+        Tuple of (success: bool, output: str)
+    """
     try:
         cmd: list[str] = ["semgrep", "scan"]
         if use_pro:
@@ -53,11 +74,34 @@ def _run_semgrep(
             cmd.extend(semgrep_args.split())
         cmd.append(repo_path)
 
-        print(f"{colors.INFO}🔍 Running semgrep: {' '.join(cmd)}{colors.RESET}")
+        if colors:
+            print(f"{colors.INFO}🔍 Running semgrep: {' '.join(cmd)}{colors.RESET}")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         return True, result.stdout
     except subprocess.CalledProcessError as exc:
-        return False, (f"Error running semgrep: {exc}\nOutput: {exc.stdout}\nError: {exc.stderr}")
+        error_msg = f"Error running semgrep: {exc}"
+        if exc.stdout:
+            error_msg += f"\nOutput: {exc.stdout}"
+        if exc.stderr:
+            error_msg += f"\nError: {exc.stderr}"
+        return False, error_msg
+
+
+# Backward compatibility functions (keep old names for existing code)
+def _clone_repository(repo_url: str, clone_path: str, colors: Any) -> bool:
+    """Backward compatibility wrapper for clone_repository."""
+    return clone_repository(repo_url, clone_path, colors)
+
+
+def _run_semgrep(
+    repo_path: str,
+    colors: Any,
+    semgrep_args: str = "",
+    rules_path: str | None = None,
+    use_pro: bool = False,
+) -> tuple[bool, str]:
+    """Backward compatibility wrapper for run_semgrep_analysis."""
+    return run_semgrep_analysis(repo_path, semgrep_args, rules_path, use_pro, colors)
 
 
 def analyze_repositories_with_semgrep(

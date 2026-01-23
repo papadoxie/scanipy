@@ -53,6 +53,12 @@ scanipy --query QUERY [OPTIONS]
 | `--pro` | Use Semgrep Pro | False |
 | `--rules` | Custom Semgrep rules path | None |
 | `--results-db` | SQLite database for saving/resuming analysis | None |
+| `--resume` | Resume analysis from previous session | False |
+| `--container-mode` | Enable containerized execution via API service | False |
+| `--api-url` | API service URL for containerized execution | None |
+| `--s3-bucket` | S3 bucket for storing results (container mode) | None |
+| `--k8s-namespace` | Kubernetes namespace for jobs | `default` |
+| `--max-parallel-jobs` | Maximum parallel Kubernetes jobs | 10 |
 
 ## CodeQL Options
 
@@ -88,11 +94,22 @@ These options apply to both Semgrep and CodeQL analysis:
 scanipy --query "pickle.loads" --language python
 ```
 
-### With Semgrep Analysis
+### With Semgrep Analysis (Local Mode)
 
 ```bash
 scanipy --query "extractall" --language python --run-semgrep \
   --rules ./tools/semgrep/rules/tarslip.yaml
+```
+
+### With Semgrep Analysis (Containerized Mode)
+
+```bash
+scanipy --query "extractall" --language python --run-semgrep \
+  --container-mode \
+  --api-url http://scanipy-api:8000 \
+  --s3-bucket scanipy-results \
+  --k8s-namespace scanipy \
+  --max-parallel-jobs 20
 ```
 
 ### With CodeQL Analysis

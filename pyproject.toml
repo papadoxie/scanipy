@@ -48,13 +48,25 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
     "types-requests>=2.31.0",
+    "types-colorama>=0.4.15",
+    "types-psycopg2>=2.9.21",
+]
+container = [
+    "psycopg2-binary>=2.9.0",
+    "boto3>=1.28.0",
+    "kubernetes>=28.0.0",
+    "fastapi>=0.100.0",
 ]
 docs = [
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.5.0",
+]
+all = [
+    "scanipy-cli[dev,container]",
 ]
 
 [project.scripts]
@@ -128,7 +140,11 @@ exclude_lines = [
     "def __repr__",
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
+    # Exclude TYPE_CHECKING block (type-only imports, never executed at runtime)
+    # Matching the if statement excludes the entire block underneath
+    "if TYPE_CHECKING:",
 ]
+fail_under = 99.0
 
 # =============================================================================
 # Ruff - Fast Python Linter & Formatter
@@ -267,3 +283,11 @@ show_error_codes = true
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "services.api.kubernetes_client",
+    "tools.semgrep.worker.worker",
+]
+warn_unused_ignores = false

@@ -365,7 +365,7 @@ class TestDisplay:
 
     def test_format_updated_at_none(self):
         """Test format_updated_at with None-like value."""
-        result = Display.format_updated_at(None)
+        result = Display.format_updated_at(None)  # type: ignore[arg-type]
         assert result == ""
 
     def test_format_updated_at_no_t_separator(self):
@@ -637,7 +637,7 @@ class TestDisplayFormatEdgeCases:
     def test_format_updated_at_attribute_error(self):
         """Test format_updated_at handles AttributeError."""
         # Passing None should trigger AttributeError in split
-        result = Display.format_updated_at(None)
+        result = Display.format_updated_at(None)  # type: ignore[arg-type]
         assert result == ""
 
     def test_format_updated_at_index_error(self):
@@ -656,7 +656,7 @@ class TestDisplayFormatEdgeCases:
     def test_format_updated_at_with_integer(self):
         """Test format_updated_at handles non-string types."""
         # Passing an integer should trigger AttributeError (no split method)
-        result = Display.format_updated_at(12345)
+        result = Display.format_updated_at(12345)  # type: ignore[arg-type]
         assert result == ""
 
 

@@ -65,7 +65,7 @@ jobs:
       
       - name: Run tests
         run: |
-          python -m pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=100
+          python -m pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=99
       
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

@@ -400,6 +400,44 @@ def create_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resume analysis from previous session (requires --results-db)",
     )
+    semgrep_group.add_argument(
+        "--api-url",
+        default=None,
+        help="API service URL for containerized execution (e.g., http://localhost:8000)",
+    )
+    semgrep_group.add_argument(
+        "--container-mode",
+        action="store_true",
+        help="Enable containerized execution using Kubernetes Jobs",
+    )
+    semgrep_group.add_argument(
+        "--s3-bucket",
+        default=None,
+        help="S3 bucket for storing analysis results (required for container mode)",
+    )
+    semgrep_group.add_argument(
+        "--k8s-namespace",
+        default="default",
+        help="Kubernetes namespace for jobs (default: default)",
+    )
+    semgrep_group.add_argument(
+        "--max-parallel-jobs",
+        type=int,
+        default=10,
+        help="Maximum number of parallel jobs (default: 10)",
+    )
+    semgrep_group.add_argument(
+        "--max-wait-time",
+        type=int,
+        default=3600,
+        help="Maximum time to wait for analysis completion in seconds (default: 3600)",
+    )
+    semgrep_group.add_argument(
+        "--poll-interval",
+        type=int,
+        default=10,
+        help="Interval between status polls in seconds (default: 10)",
+    )
 
     # CodeQL options
     codeql_group = parser.add_argument_group("CodeQL Analysis")
@@ -473,6 +511,13 @@ def build_configs_from_args(
         use_pro=args.pro,
         db_path=args.results_db,
         resume=args.resume,
+        api_url=args.api_url,
+        container_mode=args.container_mode,
+        s3_bucket=args.s3_bucket,
+        k8s_namespace=args.k8s_namespace,
+        max_parallel_jobs=args.max_parallel_jobs,
+        max_wait_time=args.max_wait_time,
+        poll_interval=args.poll_interval,
     )
 
     codeql_config = CodeQLConfig(
@@ -524,18 +569,216 @@ def run_semgrep_analysis(
         config: Semgrep configuration
         query: The search query (for session tracking)
     """
-    analyze_repositories_with_semgrep(
-        repo_list=repos,
-        colors=Colors,
-        semgrep_args=config.args,
-        clone_dir=config.clone_dir,
-        keep_cloned=config.keep_cloned,
-        rules_path=config.rules_path,
-        use_pro=config.use_pro,
-        db_path=config.db_path,
-        resume=config.resume,
-        query=query,
-    )
+    # Check if container mode is enabled
+    if config.container_mode:
+        if not config.api_url:
+            print(
+                f"{Colors.ERROR}❌ Error: --api-url is required when using "
+                f"--container-mode{Colors.RESET}"
+            )
+            return
+
+        if not config.s3_bucket:
+            print(
+                f"{Colors.ERROR}❌ Error: --s3-bucket is required when using "
+                f"--container-mode{Colors.RESET}"
+            )
+            print(
+                f"{Colors.INFO}💡 Container mode requires an S3 bucket to store "
+                f"analysis results.{Colors.RESET}"
+            )
+            return
+
+        # Use API service for containerized execution
+        _run_semgrep_via_api(repos, config, query)
+    else:
+        # Use local execution (existing behavior)
+        analyze_repositories_with_semgrep(
+            repo_list=repos,
+            colors=Colors,
+            semgrep_args=config.args,
+            clone_dir=config.clone_dir,
+            keep_cloned=config.keep_cloned,
+            rules_path=config.rules_path,
+            use_pro=config.use_pro,
+            db_path=config.db_path,
+            resume=config.resume,
+            query=query,
+        )
+
+
+def _run_semgrep_via_api(
+    repos: list[dict[str, Any]],
+    config: SemgrepConfig,
+    query: str = "",
+) -> None:
+    """Run Semgrep analysis via API service (containerized mode).
+
+    Args:
+        repos: List of repository dictionaries
+        config: Semgrep configuration
+        query: The search query
+    """
+    try:
+        import time  # noqa: PLC0415
+
+        import requests  # noqa: PLC0415
+    except ImportError:
+        print(
+            f"{Colors.ERROR}❌ Error: requests library is required for "
+            f"container mode.{Colors.RESET}"
+        )
+        print(f"{Colors.INFO}💡 Install with: pip install requests{Colors.RESET}")
+        return
+
+    assert config.api_url is not None
+
+    api_base = config.api_url.rstrip("/")
+    session_id: int | None = None
+
+    print(f"{Colors.INFO}🚀 Creating scan session via API...{Colors.RESET}")
+
+    # Create scan session
+    try:
+        response = requests.post(
+            f"{api_base}/api/v1/scans",
+            json={
+                "query": query,
+                "rules_path": config.rules_path,
+                "use_pro": config.use_pro,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        session_data = response.json()
+        session_id = session_data["session_id"]
+        print(f"{Colors.SUCCESS}✅ Created session {session_id}{Colors.RESET}")
+    except requests.RequestException as exc:
+        print(f"{Colors.ERROR}❌ Failed to create scan session: {exc}{Colors.RESET}")
+        return
+
+    # Add repositories to scan
+    print(f"{Colors.INFO}📦 Adding {len(repos)} repositories to scan...{Colors.RESET}")
+    queued_repos: list[dict[str, Any]] = []
+    max_retries = 100  # Maximum number of retry attempts for queued repos
+    retry_count = 0
+    initial_repos_processed = False
+    any_repos_added = False
+
+    while repos or queued_repos:
+        try:
+            # Process repos (either initial batch or queued repos from previous iteration)
+            repos_to_process = repos if not initial_repos_processed else queued_repos
+            if not repos_to_process:
+                break
+
+            response = requests.post(
+                f"{api_base}/api/v1/scans/{session_id}/repos",
+                json={"repos": repos_to_process},
+                timeout=60,
+            )
+            response.raise_for_status()
+            jobs_data = response.json()
+            jobs_created = jobs_data.get("jobs_created", 0)
+            queued_count = jobs_data.get("queued_repos", 0)
+            new_queued_repos = jobs_data.get("queued_repos_list", [])
+
+            if jobs_created > 0:
+                print(f"{Colors.SUCCESS}✅ Created {jobs_created} Kubernetes Jobs{Colors.RESET}")
+                any_repos_added = True
+
+            # Clear initial repos list after first iteration
+            if not initial_repos_processed:
+                repos = []
+                initial_repos_processed = True
+
+            # Update queued repos for next iteration
+            queued_repos = new_queued_repos
+
+            if queued_count > 0:
+                print(
+                    f"{Colors.INFO}⏸️  {queued_count} repositories queued "
+                    f"(will retry when jobs complete){Colors.RESET}"
+                )
+
+            # If we have queued repos, wait a bit before retrying
+            if queued_repos:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    print(
+                        f"{Colors.ERROR}❌ Maximum retry attempts reached. "
+                        f"{len(queued_repos)} repos still queued.{Colors.RESET}"
+                    )
+                    break
+
+                # Wait a bit before checking if slots are available
+                time.sleep(5)
+        except requests.RequestException as exc:
+            print(f"{Colors.ERROR}❌ Failed to create jobs: {exc}{Colors.RESET}")
+            return
+
+    # If no repos were added, skip polling and results fetching
+    if not any_repos_added:
+        print(f"{Colors.INFO}No repositories to process.{Colors.RESET}")
+        return
+
+    # Poll for results
+    print(f"{Colors.INFO}⏳ Waiting for analysis to complete...{Colors.RESET}")
+    max_wait_time = config.max_wait_time
+    poll_interval = config.poll_interval
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait_time:
+        try:
+            response = requests.get(
+                f"{api_base}/api/v1/scans/{session_id}",
+                timeout=30,
+            )
+            response.raise_for_status()
+            status_data = response.json()
+
+            completed = status_data.get("completed_repos", 0)
+            total = status_data.get("total_repos", 0)
+            status_val = status_data.get("status", "unknown")
+
+            print(
+                f"{Colors.PROGRESS}📊 Status: {status_val} - "
+                f"{completed}/{total} repositories completed{Colors.RESET}",
+                end="\r",
+            )
+
+            if status_val == "completed":
+                print()  # New line after progress
+                break
+
+            time.sleep(poll_interval)
+        except requests.RequestException:
+            time.sleep(poll_interval)
+            continue
+
+    # Get final results
+    print(f"{Colors.INFO}📥 Fetching results...{Colors.RESET}")
+    try:
+        response = requests.get(
+            f"{api_base}/api/v1/scans/{session_id}/results",
+            timeout=30,
+        )
+        response.raise_for_status()
+        results = response.json()
+
+        print(f"\n{Colors.HEADER}{'─' * 80}{Colors.RESET}")
+        print(f"{Colors.INFO}📊 Semgrep Analysis Summary:{Colors.RESET}")
+        successes = sum(1 for r in results if r.get("success"))
+        total = len(results)
+        failed = total - successes
+        print(
+            f"{Colors.INFO}✓ Successfully analyzed: {successes}/{total} repositories{Colors.RESET}"
+        )
+        print(f"{Colors.INFO}✗ Failed to analyze: {failed}/{total} repositories{Colors.RESET}")
+        print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
+    except requests.RequestException as exc:
+        print(f"{Colors.ERROR}❌ Failed to fetch results: {exc}{Colors.RESET}")
+    # Cleanup: All resources (HTTP connections) are automatically cleaned up by requests library
 
 
 def run_codeql_analysis(

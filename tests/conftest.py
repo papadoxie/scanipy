@@ -187,3 +187,20 @@ def mock_colors():
     mock.DESCRIPTION = ""
     mock.RESET = ""
     return mock
+
+
+def pytest_collection_modifyitems(config, items):
+    """Modify test collection to run ImportError tests last."""
+    # Separate ImportError tests from other tests
+    import_error_tests = []
+    other_tests = []
+
+    for item in items:
+        # Check if test is from test_import_errors.py using nodeid
+        if "test_import_errors" in item.nodeid:
+            import_error_tests.append(item)
+        else:
+            other_tests.append(item)
+
+    # Reorder: other tests first, then ImportError tests
+    items[:] = other_tests + import_error_tests
