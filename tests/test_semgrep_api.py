@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -418,3 +418,105 @@ class TestKubernetesClient:
         client = KubernetesClient(config)
         with pytest.raises(RuntimeError, match="Failed to delete job"):
             client.delete_job("test-job")
+
+    @patch("services.api.kubernetes_client.k8s_config")
+    @patch("services.api.kubernetes_client.client")
+    def test_count_active_jobs(self, mock_client, mock_k8s_config):
+        """Test count_active_jobs counts jobs with active pods."""
+        from unittest.mock import Mock
+
+        mock_k8s_config.load_incluster_config.return_value = None
+        mock_batch_api = MagicMock()
+        # Create mock job list with 2 active jobs and 1 completed job
+        mock_job1 = Mock()
+        mock_job1.status.active = 1  # Active
+        mock_job2 = Mock()
+        mock_job2.status.active = 1  # Active
+        mock_job3 = Mock()
+        mock_job3.status.active = 0  # Not active (completed)
+        mock_job_list = Mock()
+        mock_job_list.items = [mock_job1, mock_job2, mock_job3]
+        mock_batch_api.list_namespaced_job.return_value = mock_job_list
+        mock_client.BatchV1Api.return_value = mock_batch_api
+        config = APIConfig(k8s_namespace="test")
+
+        client = KubernetesClient(config)
+        count = client.count_active_jobs(session_id=1)
+
+        assert count == 2  # Only 2 jobs have active > 0
+        mock_batch_api.list_namespaced_job.assert_called_once_with(
+            namespace="test", label_selector="session-id=1"
+        )
+
+    @patch("services.api.kubernetes_client.k8s_config")
+    @patch("services.api.kubernetes_client.client")
+    def test_count_active_jobs_zero(self, mock_client, mock_k8s_config):
+        """Test count_active_jobs returns 0 when no active jobs."""
+        from unittest.mock import Mock
+
+        mock_k8s_config.load_incluster_config.return_value = None
+        mock_batch_api = MagicMock()
+        # Create mock job list with no active jobs
+        mock_job1 = Mock()
+        mock_job1.status.active = 0  # Not active
+        mock_job2 = Mock()
+        mock_job2.status.active = None  # None (no active pods)
+        mock_job_list = Mock()
+        mock_job_list.items = [mock_job1, mock_job2]
+        mock_batch_api.list_namespaced_job.return_value = mock_job_list
+        mock_client.BatchV1Api.return_value = mock_batch_api
+        config = APIConfig(k8s_namespace="test")
+
+        client = KubernetesClient(config)
+        count = client.count_active_jobs(session_id=1)
+
+        assert count == 0
+
+    @patch("services.api.kubernetes_client.k8s_config")
+    @patch("services.api.kubernetes_client.client")
+    def test_count_active_jobs_empty_list(self, mock_client, mock_k8s_config):
+        """Test count_active_jobs returns 0 when no jobs exist."""
+        mock_k8s_config.load_incluster_config.return_value = None
+        mock_batch_api = MagicMock()
+        mock_job_list = Mock()
+        mock_job_list.items = []  # No jobs
+        mock_batch_api.list_namespaced_job.return_value = mock_job_list
+        mock_client.BatchV1Api.return_value = mock_batch_api
+        config = APIConfig(k8s_namespace="test")
+
+        client = KubernetesClient(config)
+        count = client.count_active_jobs(session_id=1)
+
+        assert count == 0
+
+    @patch("services.api.kubernetes_client.k8s_config")
+    @patch("services.api.kubernetes_client.client")
+    def test_count_active_jobs_raises_when_not_initialized(self, mock_client, mock_k8s_config):
+        """Test count_active_jobs raises RuntimeError when batch_api is None."""
+        mock_k8s_config.load_incluster_config.return_value = None
+        mock_client.BatchV1Api.return_value = None
+        config = APIConfig()
+
+        client = KubernetesClient(config)
+        client.batch_api = None  # Simulate uninitialized state
+
+        with pytest.raises(RuntimeError, match="Kubernetes client not initialized"):
+            client.count_active_jobs(session_id=1)
+
+    @patch("services.api.kubernetes_client.k8s_config")
+    @patch("services.api.kubernetes_client.client")
+    def test_count_active_jobs_handles_api_exception(self, mock_client, mock_k8s_config):
+        """Test count_active_jobs handles ApiException."""
+        from kubernetes.client.rest import ApiException
+
+        mock_k8s_config.load_incluster_config.return_value = None
+        mock_batch_api = MagicMock()
+        # Create a real ApiException instance
+        mock_exc = ApiException(status=500, reason="Internal Server Error")
+        mock_batch_api.list_namespaced_job.side_effect = mock_exc
+        mock_client.BatchV1Api.return_value = mock_batch_api
+        config = APIConfig()
+
+        client = KubernetesClient(config)
+        with pytest.raises(RuntimeError, match="Failed to count active jobs"):
+            client.count_active_jobs(session_id=1)

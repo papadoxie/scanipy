@@ -96,6 +96,7 @@ class TestResultsDatabasePostgreSQL:
                 datetime.now(UTC),
                 "s3://bucket/key",
                 "job-123",
+                "semgrep-1-owner-repo-abc123",  # k8s_job_name
             ),
         ]
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
@@ -269,3 +270,77 @@ class TestResultsDatabasePostgreSQL:
         session = db.get_session(99999)
 
         assert session is None
+
+    @patch("tools.semgrep.results_db.psycopg2")
+    def test_create_session_postgres_raises_runtime_error(self, mock_psycopg2):
+        """Test create_session raises RuntimeError when fetchone returns None."""
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = None  # Simulate no ID returned
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
+
+        db = ResultsDatabase(db_url="postgresql://user:pass@host/db")
+        with pytest.raises(RuntimeError, match="Failed to create session"):
+            db.create_session("test query")
+
+    @patch("tools.semgrep.results_db.psycopg2")
+    def test_acquire_job_slot_postgres(self, mock_psycopg2):
+        """Test acquire_job_slot works with PostgreSQL."""
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.execute.return_value = None
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
+
+        db = ResultsDatabase(db_url="postgresql://user:pass@host/db")
+
+        # Mock k8s_client
+        mock_k8s_client = MagicMock()
+        mock_k8s_client.count_active_jobs.return_value = 5
+
+        # Test with max_parallel = 10, active = 5 (slot available)
+        slot_available, active_count = db.acquire_job_slot(
+            session_id=1, max_parallel=10, k8s_client=mock_k8s_client
+        )
+
+        assert slot_available is True
+        assert active_count == 5
+        # Verify advisory lock was called
+        assert mock_cur.execute.call_count >= 2  # lock and unlock
+
+    @patch("tools.semgrep.results_db.psycopg2")
+    def test_acquire_job_slot_postgres_exception_handling(self, mock_psycopg2):
+        """Test acquire_job_slot handles exceptions from k8s_client in PostgreSQL."""
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.execute.return_value = None
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
+
+        db = ResultsDatabase(db_url="postgresql://user:pass@host/db")
+
+        # Mock k8s_client to raise exception
+        mock_k8s_client = MagicMock()
+        mock_k8s_client.count_active_jobs.side_effect = Exception("K8s error")
+
+        # Should use conservative fallback (assume limit reached)
+        slot_available, active_count = db.acquire_job_slot(
+            session_id=1, max_parallel=10, k8s_client=mock_k8s_client
+        )
+
+        assert slot_available is False
+        assert active_count == 10  # Conservative fallback

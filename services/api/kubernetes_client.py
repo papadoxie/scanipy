@@ -42,7 +42,15 @@ class KubernetesClient:
         self._init_client()
 
     def _init_client(self) -> None:
-        """Initialize Kubernetes API clients."""
+        """Initialize Kubernetes API clients.
+
+        Attempts to load Kubernetes configuration in the following order:
+        1. In-cluster config (for pods running inside Kubernetes)
+        2. Kubeconfig file (for local development)
+
+        Raises:
+            RuntimeError: If both configuration methods fail
+        """
         try:
             # Try to load in-cluster config first (for pods running in K8s)
             k8s_config.load_incluster_config()
@@ -184,3 +192,44 @@ class KubernetesClient:
         except ApiException as exc:
             if exc.status != 404:  # Ignore if already deleted
                 raise RuntimeError(f"Failed to delete job: {exc.reason}") from exc
+
+    def count_active_jobs(self, session_id: int) -> int:
+        """Count the number of active (running) jobs for a session.
+
+        A job is considered active if it has active pods (status.active > 0).
+        This method queries the Kubernetes API to get the current state of all
+        jobs labeled with the given session_id.
+
+        Args:
+            session_id: Session ID to count jobs for. Jobs are filtered by
+                       the 'session-id' label matching this value.
+
+        Returns:
+            Number of active jobs for the session. Returns 0 if no active jobs
+            are found or if the session has no jobs.
+
+        Raises:
+            RuntimeError: If Kubernetes client is not initialized
+            RuntimeError: If job listing fails (wraps ApiException)
+        """
+        if not self.batch_api:
+            raise RuntimeError("Kubernetes client not initialized")
+        assert self.batch_api is not None  # Type narrowing for mypy
+
+        try:
+            # List all jobs with the session-id label
+            label_selector = f"session-id={session_id}"
+            jobs = self.batch_api.list_namespaced_job(
+                namespace=self.config.k8s_namespace,
+                label_selector=label_selector,
+            )
+
+            # Count jobs that have active pods (still running)
+            active_count = 0
+            for job in jobs.items:
+                if job.status.active and job.status.active > 0:
+                    active_count += 1
+
+            return active_count
+        except ApiException as exc:
+            raise RuntimeError(f"Failed to count active jobs: {exc.reason}") from exc

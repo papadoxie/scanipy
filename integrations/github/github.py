@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
-"""
-GitHub API clients for Scanipy.
+"""GitHub API clients for Scanipy.
 
 This module provides REST and GraphQL API wrappers for interacting with GitHub,
 including code search, repository metadata fetching, and keyword filtering.
+
+Error Handling Pattern:
+    All methods in this module follow a consistent error handling approach:
+    - Network errors (connection, timeout) raise GitHubNetworkError
+    - Rate limiting errors raise GitHubRateLimitError
+    - Other API errors raise GitHubAPIError
+    - Methods never return error dictionaries - they always raise exceptions
+    - Callers should catch specific exception types to handle different error cases
 """
 
 from __future__ import annotations

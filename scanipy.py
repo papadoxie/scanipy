@@ -426,6 +426,18 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default=10,
         help="Maximum number of parallel jobs (default: 10)",
     )
+    semgrep_group.add_argument(
+        "--max-wait-time",
+        type=int,
+        default=3600,
+        help="Maximum time to wait for analysis completion in seconds (default: 3600)",
+    )
+    semgrep_group.add_argument(
+        "--poll-interval",
+        type=int,
+        default=10,
+        help="Interval between status polls in seconds (default: 10)",
+    )
 
     # CodeQL options
     codeql_group = parser.add_argument_group("CodeQL Analysis")
@@ -504,6 +516,8 @@ def build_configs_from_args(
         s3_bucket=args.s3_bucket,
         k8s_namespace=args.k8s_namespace,
         max_parallel_jobs=args.max_parallel_jobs,
+        max_wait_time=args.max_wait_time,
+        poll_interval=args.poll_interval,
     )
 
     codeql_config = CodeQLConfig(
@@ -564,6 +578,17 @@ def run_semgrep_analysis(
             )
             return
 
+        if not config.s3_bucket:
+            print(
+                f"{Colors.ERROR}❌ Error: --s3-bucket is required when using "
+                f"--container-mode{Colors.RESET}"
+            )
+            print(
+                f"{Colors.INFO}💡 Container mode requires an S3 bucket to store "
+                f"analysis results.{Colors.RESET}"
+            )
+            return
+
         # Use API service for containerized execution
         _run_semgrep_via_api(repos, config, query)
     else:
@@ -609,6 +634,7 @@ def _run_semgrep_via_api(
     assert config.api_url is not None
 
     api_base = config.api_url.rstrip("/")
+    session_id: int | None = None
 
     print(f"{Colors.INFO}🚀 Creating scan session via API...{Colors.RESET}")
 
@@ -633,24 +659,73 @@ def _run_semgrep_via_api(
 
     # Add repositories to scan
     print(f"{Colors.INFO}📦 Adding {len(repos)} repositories to scan...{Colors.RESET}")
-    try:
-        response = requests.post(
-            f"{api_base}/api/v1/scans/{session_id}/repos",
-            json={"repos": repos},
-            timeout=60,
-        )
-        response.raise_for_status()
-        jobs_data = response.json()
-        jobs_created = jobs_data.get("jobs_created", 0)
-        print(f"{Colors.SUCCESS}✅ Created {jobs_created} Kubernetes Jobs{Colors.RESET}")
-    except requests.RequestException as exc:
-        print(f"{Colors.ERROR}❌ Failed to create jobs: {exc}{Colors.RESET}")
+    queued_repos: list[dict[str, Any]] = []
+    max_retries = 100  # Maximum number of retry attempts for queued repos
+    retry_count = 0
+    initial_repos_processed = False
+    any_repos_added = False
+
+    while repos or queued_repos:
+        try:
+            # Process repos (either initial batch or queued repos from previous iteration)
+            repos_to_process = repos if not initial_repos_processed else queued_repos
+            if not repos_to_process:
+                break
+
+            response = requests.post(
+                f"{api_base}/api/v1/scans/{session_id}/repos",
+                json={"repos": repos_to_process},
+                timeout=60,
+            )
+            response.raise_for_status()
+            jobs_data = response.json()
+            jobs_created = jobs_data.get("jobs_created", 0)
+            queued_count = jobs_data.get("queued_repos", 0)
+            new_queued_repos = jobs_data.get("queued_repos_list", [])
+
+            if jobs_created > 0:
+                print(f"{Colors.SUCCESS}✅ Created {jobs_created} Kubernetes Jobs{Colors.RESET}")
+                any_repos_added = True
+
+            # Clear initial repos list after first iteration
+            if not initial_repos_processed:
+                repos = []
+                initial_repos_processed = True
+
+            # Update queued repos for next iteration
+            queued_repos = new_queued_repos
+
+            if queued_count > 0:
+                print(
+                    f"{Colors.INFO}⏸️  {queued_count} repositories queued "
+                    f"(will retry when jobs complete){Colors.RESET}"
+                )
+
+            # If we have queued repos, wait a bit before retrying
+            if queued_repos:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    print(
+                        f"{Colors.ERROR}❌ Maximum retry attempts reached. "
+                        f"{len(queued_repos)} repos still queued.{Colors.RESET}"
+                    )
+                    break
+
+                # Wait a bit before checking if slots are available
+                time.sleep(5)
+        except requests.RequestException as exc:
+            print(f"{Colors.ERROR}❌ Failed to create jobs: {exc}{Colors.RESET}")
+            return
+
+    # If no repos were added, skip polling and results fetching
+    if not any_repos_added:
+        print(f"{Colors.INFO}No repositories to process.{Colors.RESET}")
         return
 
     # Poll for results
     print(f"{Colors.INFO}⏳ Waiting for analysis to complete...{Colors.RESET}")
-    max_wait_time = 3600  # 1 hour max
-    poll_interval = 10  # Poll every 10 seconds
+    max_wait_time = config.max_wait_time
+    poll_interval = config.poll_interval
     start_time = time.time()
 
     while time.time() - start_time < max_wait_time:
@@ -703,6 +778,7 @@ def _run_semgrep_via_api(
         print(f"{Colors.HEADER}{'─' * 80}{Colors.RESET}")
     except requests.RequestException as exc:
         print(f"{Colors.ERROR}❌ Failed to fetch results: {exc}{Colors.RESET}")
+    # Cleanup: All resources (HTTP connections) are automatically cleaned up by requests library
 
 
 def run_codeql_analysis(

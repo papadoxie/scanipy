@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,10 +36,18 @@ class APIConfig:
     @classmethod
     def from_env(cls) -> APIConfig:
         """Create configuration from environment variables."""
+        s3_bucket = os.getenv("S3_BUCKET", "")
+        # Warn if S3 bucket is not set (container mode typically requires it)
+        if not s3_bucket:
+            logger.warning(
+                "S3_BUCKET environment variable not set. "
+                "Container mode may not work without S3 bucket configuration."
+            )
+
         return cls(
             k8s_namespace=os.getenv("K8S_NAMESPACE", "default"),
             worker_image=os.getenv("WORKER_IMAGE", "scanipy-semgrep-worker:latest"),
-            s3_bucket=os.getenv("S3_BUCKET", ""),
+            s3_bucket=s3_bucket,
             aws_region=os.getenv("AWS_REGION", "us-east-1"),
             db_url=os.getenv("DATABASE_URL"),
             db_path=os.getenv("DATABASE_PATH"),

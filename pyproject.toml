@@ -140,6 +140,9 @@ exclude_lines = [
     "def __repr__",
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
+    # Exclude TYPE_CHECKING block (type-only imports, never executed at runtime)
+    # Matching the if statement excludes the entire block underneath
+    "if TYPE_CHECKING:",
 ]
 fail_under = 99.0
 

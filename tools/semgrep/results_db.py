@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -73,6 +74,52 @@ class ResultsDatabase:
 
         self._init_db()
 
+    def _get_connection(
+        self, max_retries: int = 3, retry_delay: float = 1.0
+    ) -> sqlite3.Connection | Any:
+        """Get database connection with retry logic.
+
+        Args:
+            max_retries: Maximum number of retry attempts
+            retry_delay: Base delay between retries (seconds), uses exponential backoff
+
+        Returns:
+            Database connection object (context manager)
+            - sqlite3.Connection for SQLite
+            - psycopg2 connection for PostgreSQL
+
+        Raises:
+            ConnectionError: If connection fails after all retries
+        """
+        last_exception: Exception | None = None
+
+        for attempt in range(max_retries):
+            try:
+                if self.is_postgres:
+                    if not psycopg2:
+                        raise ImportError(
+                            "psycopg2 is required for PostgreSQL support. "
+                            "Install with: pip install psycopg2-binary"
+                        )
+                    assert self.db_url is not None
+                    return psycopg2.connect(self.db_url)
+                # SQLite path
+                assert self.db_path is not None
+                return sqlite3.connect(self.db_path)
+            except (sqlite3.Error, Exception) as exc:
+                last_exception = exc
+                if attempt < max_retries - 1:
+                    # Exponential backoff: delay * (2^attempt)
+                    delay = retry_delay * (2**attempt)
+                    time.sleep(delay)
+                    continue
+                # All retries exhausted
+                raise ConnectionError(
+                    f"Failed to connect to database after {max_retries} attempts: {exc}"
+                ) from last_exception
+        # This should never be reached, but mypy needs it
+        raise ConnectionError("Failed to connect to database - no attempts made")
+
     def _init_db(self) -> None:
         """Create the database schema if it doesn't exist."""
         if self.is_postgres:
@@ -106,6 +153,7 @@ class ResultsDatabase:
                     analyzed_at TEXT NOT NULL,
                     s3_path TEXT,
                     k8s_job_id TEXT,
+                    k8s_job_name TEXT,
                     FOREIGN KEY (session_id) REFERENCES analysis_sessions(id),
                     UNIQUE(session_id, repo_name)
                 )
@@ -153,6 +201,7 @@ class ResultsDatabase:
                         analyzed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         s3_path TEXT,
                         k8s_job_id TEXT,
+                        k8s_job_name TEXT,
                         FOREIGN KEY (session_id) REFERENCES analysis_sessions(id),
                         UNIQUE(session_id, repo_name)
                     )
@@ -186,9 +235,8 @@ class ResultsDatabase:
             The session ID
         """
         if self.is_postgres:
-            assert self.db_url is not None
-            with psycopg2.connect(self.db_url) as conn:
-                with conn.cursor() as cur:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:  # type: ignore[union-attr]
                     cur.execute(
                         """
                         INSERT INTO analysis_sessions
@@ -205,8 +253,7 @@ class ResultsDatabase:
                 conn.commit()
                 return int(session_id)
         else:
-            assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.execute(
                     """
                     INSERT INTO analysis_sessions
@@ -228,8 +275,7 @@ class ResultsDatabase:
             The session ID or None if no session exists
         """
         if self.is_postgres:
-            assert self.db_url is not None
-            with psycopg2.connect(self.db_url) as conn, conn.cursor() as cur:
+            with self._get_connection() as conn, conn.cursor() as cur:  # type: ignore[union-attr]
                 cur.execute(
                     """
                         SELECT id FROM analysis_sessions
@@ -242,8 +288,7 @@ class ResultsDatabase:
                 row = cur.fetchone()
                 return row[0] if row else None
         else:
-            assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as sqlite_conn:
+            with self._get_connection() as sqlite_conn:
                 cursor = sqlite_conn.execute(
                     """
                     SELECT id FROM analysis_sessions
@@ -265,6 +310,7 @@ class ResultsDatabase:
         output: str,
         s3_path: str | None = None,
         k8s_job_id: str | None = None,
+        k8s_job_name: str | None = None,
     ) -> None:
         """Save an analysis result to the database.
 
@@ -276,17 +322,17 @@ class ResultsDatabase:
             output: Semgrep output or error message
             s3_path: Optional S3 path where results are stored
             k8s_job_id: Optional Kubernetes Job ID for tracking
+            k8s_job_name: Optional Kubernetes Job name for tracking
         """
         if self.is_postgres:
-            assert self.db_url is not None
-            with psycopg2.connect(self.db_url) as conn:
-                with conn.cursor() as cur:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:  # type: ignore[union-attr]
                     cur.execute(
                         """
                         INSERT INTO analysis_results
                         (session_id, repo_name, repo_url, success, output,
-                         analyzed_at, s3_path, k8s_job_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                         analyzed_at, s3_path, k8s_job_id, k8s_job_name)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (session_id, repo_name)
                         DO UPDATE SET
                             repo_url = EXCLUDED.repo_url,
@@ -294,7 +340,8 @@ class ResultsDatabase:
                             output = EXCLUDED.output,
                             analyzed_at = EXCLUDED.analyzed_at,
                             s3_path = EXCLUDED.s3_path,
-                            k8s_job_id = EXCLUDED.k8s_job_id
+                            k8s_job_id = EXCLUDED.k8s_job_id,
+                            k8s_job_name = EXCLUDED.k8s_job_name
                         """,
                         (
                             session_id,
@@ -305,18 +352,18 @@ class ResultsDatabase:
                             datetime.now(UTC),
                             s3_path,
                             k8s_job_id,
+                            k8s_job_name,
                         ),
                     )
                 conn.commit()
         else:
-            assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO analysis_results
                     (session_id, repo_name, repo_url, success, output,
-                     analyzed_at, s3_path, k8s_job_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     analyzed_at, s3_path, k8s_job_id, k8s_job_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         session_id,
@@ -327,6 +374,7 @@ class ResultsDatabase:
                         datetime.now(UTC).isoformat(),
                         s3_path,
                         k8s_job_id,
+                        k8s_job_name,
                     ),
                 )
                 conn.commit()
@@ -341,8 +389,7 @@ class ResultsDatabase:
             Set of repository names that have been analyzed
         """
         if self.is_postgres:
-            assert self.db_url is not None
-            with psycopg2.connect(self.db_url) as conn, conn.cursor() as cur:
+            with self._get_connection() as conn, conn.cursor() as cur:  # type: ignore[union-attr]
                 cur.execute(
                     """
                         SELECT repo_name FROM analysis_results
@@ -352,8 +399,7 @@ class ResultsDatabase:
                 )
                 return {row[0] for row in cur.fetchall()}
         else:
-            assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as sqlite_conn:
+            with self._get_connection() as sqlite_conn:
                 cursor = sqlite_conn.execute(
                     """
                     SELECT repo_name FROM analysis_results
@@ -373,13 +419,12 @@ class ResultsDatabase:
             List of result dictionaries
         """
         if self.is_postgres:
-            assert self.db_url is not None
-            with psycopg2.connect(self.db_url) as conn:
-                with conn.cursor() as cur:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:  # type: ignore[union-attr]
                     cur.execute(
                         """
                         SELECT repo_name, repo_url, success, output, analyzed_at,
-                               s3_path, k8s_job_id
+                               s3_path, k8s_job_id, k8s_job_name
                         FROM analysis_results
                         WHERE session_id = %s
                         ORDER BY id
@@ -398,15 +443,16 @@ class ResultsDatabase:
                         "analyzed_at": row[4].isoformat() if row[4] else None,
                         "s3_path": row[5],
                         "k8s_job_id": row[6],
+                        "k8s_job_name": row[7],
                     }
                     for row in rows
                 ]
         else:
-            assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.execute(
                     """
-                    SELECT repo_name, repo_url, success, output, analyzed_at, s3_path, k8s_job_id
+                    SELECT repo_name, repo_url, success, output, analyzed_at,
+                           s3_path, k8s_job_id, k8s_job_name
                     FROM analysis_results
                     WHERE session_id = ?
                     ORDER BY id
@@ -422,6 +468,7 @@ class ResultsDatabase:
                         "analyzed_at": row[4],
                         "s3_path": row[5],
                         "k8s_job_id": row[6],
+                        "k8s_job_name": row[7],
                     }
                     for row in cursor.fetchall()
                 ]
@@ -460,8 +507,7 @@ class ResultsDatabase:
                     for row in cur.fetchall()
                 ]
         else:
-            assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as sqlite_conn:
+            with self._get_connection() as sqlite_conn:
                 cursor = sqlite_conn.execute(
                     """
                     SELECT s.id, s.query, s.created_at, s.rules_path, s.use_pro, s.status,
@@ -497,8 +543,7 @@ class ResultsDatabase:
             Session dictionary or None if not found
         """
         if self.is_postgres:
-            assert self.db_url is not None
-            with psycopg2.connect(self.db_url) as conn, conn.cursor() as cur:
+            with self._get_connection() as conn, conn.cursor() as cur:  # type: ignore[union-attr]
                 cur.execute(
                     """
                         SELECT id, query, created_at, rules_path, use_pro, status
@@ -519,8 +564,7 @@ class ResultsDatabase:
                     "status": row[5],
                 }
         else:
-            assert self.db_path is not None
-            with sqlite3.connect(self.db_path) as sqlite_conn:
+            with self._get_connection() as sqlite_conn:
                 cursor = sqlite_conn.execute(
                     """
                     SELECT id, query, created_at, rules_path, use_pro, status
@@ -561,9 +605,8 @@ class ResultsDatabase:
             status: New status (e.g., 'pending', 'running', 'completed', 'failed')
         """
         if self.is_postgres:
-            assert self.db_url is not None
-            with psycopg2.connect(self.db_url) as conn:
-                with conn.cursor() as cur:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:  # type: ignore[union-attr]
                     cur.execute(
                         """
                         UPDATE analysis_sessions
@@ -585,3 +628,65 @@ class ResultsDatabase:
                     (status, session_id),
                 )
                 conn.commit()
+
+    def acquire_job_slot(
+        self, session_id: int, max_parallel: int, k8s_client: Any
+    ) -> tuple[bool, int]:
+        """Atomically check and reserve a job slot using database-level locking.
+
+        This method uses database advisory locks (PostgreSQL) or exclusive transactions
+        (SQLite) to prevent race conditions when multiple requests try to create jobs
+        simultaneously.
+
+        Args:
+            session_id: The session ID to check jobs for
+            max_parallel: Maximum number of parallel jobs allowed
+            k8s_client: Kubernetes client instance to count active jobs
+
+        Returns:
+            Tuple of (slot_available: bool, current_active_jobs: int)
+            - slot_available: True if a slot is available, False otherwise
+            - current_active_jobs: Current number of active jobs for the session
+        """
+        if self.is_postgres:
+            with self._get_connection() as conn, conn.cursor() as cur:  # type: ignore[union-attr]
+                # Use PostgreSQL advisory lock based on session_id
+                # pg_advisory_lock blocks until lock is acquired
+                lock_key = session_id % (2**31)  # Advisory lock key must fit in bigint
+                cur.execute("SELECT pg_advisory_lock(%s)", (lock_key,))
+                try:
+                    # Count active jobs from Kubernetes
+                    # Note: We still need k8s_client to get accurate count
+                    # The lock prevents race conditions in our code, but we need
+                    # the actual K8s state for accurate counting
+                    try:
+                        active_count = k8s_client.count_active_jobs(session_id)
+                    except Exception:
+                        # If we can't count, assume limit reached (conservative)
+                        active_count = max_parallel
+
+                    slot_available = active_count < max_parallel
+                    return slot_available, active_count
+                finally:
+                    # Always release the lock
+                    cur.execute("SELECT pg_advisory_unlock(%s)", (lock_key,))
+                    conn.commit()
+        else:
+            # SQLite: Use BEGIN IMMEDIATE to get exclusive lock
+            with self._get_connection() as conn:
+                # BEGIN IMMEDIATE acquires an exclusive lock
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    # Count active jobs from Kubernetes
+                    try:
+                        active_count = k8s_client.count_active_jobs(session_id)
+                    except Exception:
+                        # If we can't count, assume limit reached (conservative)
+                        active_count = max_parallel
+
+                    slot_available = active_count < max_parallel
+                    conn.commit()  # Commit releases the lock
+                    return slot_available, active_count
+                except Exception:
+                    conn.rollback()  # Rollback releases the lock
+                    raise
